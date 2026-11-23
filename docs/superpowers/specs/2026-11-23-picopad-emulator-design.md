@@ -20,7 +20,7 @@ Uživatel chce nechávat agenty generovat nové hry pro Picopad (handheld na Ras
 - Programy, které sahají přímo na hardware: EMU/NES, EMU/GBC, EMU/PC, EMU/141PF, dema RTXFAST, RAYTRACE, FOUNTAIN, LEVMETER, HSTXDEMO.
 - Varianty Picopadu s jiným výstupem (VGA, HSTX/HDMI), Picoino, Picotron. Emuluje se konfigurace picopad10; Picopad 2.0 má stejné API, takže hry pro něj jsou pokryté také.
 - USB (zařízení i host), baterie (vrací pevnou hodnotu), LED (stačí no-op, případně indikátor v okně), PSRAM, druhé jádro.
-- Přesná emulace rychlosti CPU. Hry, které se spoléhají na pomalost procesoru místo `WaitMs`/`Time`, poběží rychleji.
+- Přesná emulace rychlosti CPU (cyklově přesná čísla dá jen případná budoucí emulace RP2040, varianta C). Milník 4 přidává jen přibližný odhad výkonu zařízení z nákladového modelu volání SDK; vlastní výpočty hry mimo SDK model nezapočítává.
 - Linux/macOS. Návrh je pro Windows; přenositelnost nesmí být zbytečně zablokovaná, ale neřeší se (pozor: SDK má `u32 = unsigned long`, na 64bit Linuxu neplatí `sizeof(u32)==4`).
 - Pipeline generování her agenty – je to navazující projekt, který emulátor využije.
 
@@ -139,6 +139,30 @@ Hra běží na vlastním vlákně ("herní vlákno"); hlavní vlákno obsluhuje 
 - Baterie vrací pevnou plnou hodnotu, LED no-op.
 - Host `RuntimeInit()` provede totéž co originál, pokud to dává smysl: ROM funkce, hodiny (`CurrentFreq`), `RandInit` + seed, `AlarmInit`, SysTick, `MemInit` (pokud se zachová `lib_malloc`), konstruktory C++ (u MinGW běží samy), `DeviceInit()`, pak `game_main()`.
 
+### Odhad výkonu zařízení (milník 4)
+
+Účel: včas vidět, že hra na skutečném Picopadu nebude stíhat – uživatel v okně, agent v logu. Odhad je přibližný (cíl: chyba do desítek procent u typických her z repa) a nenahrazuje občasné ověření na zařízení.
+
+**Úroveň 1 – deterministický nákladový model volání SDK (součást milníku 4):**
+
+- Emulátor vede "čas zařízení": ke každé operaci, která na Picopadu stojí znatelný čas, přičte její odhadovanou cenu a o tu posune hodiny hry (v reálném režimu čekáním, ve virtuálním posunem virtuálního času). Hra tak v emulátoru zpomalí a zatrhá se zhruba tak, jak by se zatrhala na zařízení.
+- Započítává se:
+  - přenos na displej – model z části Displej (SPI 24 MHz, 16 bitů/px);
+  - kreslení – cena úměrná počtu vykreslených pixelů podle třídy operace (výplň obdélníku, čára/bod, text, kopie obrázku RGB565, paletový obrázek, blit s průhlednou barvou, RLE, transformace maticí) plus pevná režie na volání;
+  - zvukový mixér – na zařízení běží v přerušení cca 61 000× za sekundu; model z času zařízení odečte podíl výkonu podle počtu aktivních kanálů a formátu (PCM/ADPCM);
+  - případně další drahé knihovní funkce, pokud je kalibrace ukáže jako významné (výběr nechávám na implementátorovi).
+- **Zachycení operací:** kreslicí knihovna se překládá beze změny. Třída operace a plocha se zjistí obalením veřejných funkcí `Draw*` (např. `-Wl,--wrap=` u volání z kódu hry, nebo jiný mechanismus, který nemění SDK); jako záchrana stačí plocha z `DispDirtyRect`/`DispDirtyPoint`, které kreslení volá vždy. Mechanismus volí implementátor.
+- **Kalibrace na reálném Picopadu:** součástí milníku je benchmarková aplikace mimo strom SDK (v `examples/` nebo `tools/`), kterou uživatel nahraje na Picopad 1.0. Změří ceny jednotlivých tříd operací (na pixel a na volání) a zátěž mixéru a zobrazí je na displeji (případně zapíše na SD kartu). Konstanty se uloží do souboru v repu emulátoru (např. `perf/picopad10.ini`), aby šly později doplnit pro Picopad 2.0.
+- **Výstup:**
+  - v okně volitelný ukazatel (přepínač klávesou, např. F1): odhadovaný čas snímku na zařízení, podíl mixéru, varování při překročení rozpočtu;
+  - v headless logu na každý snímek (interval mezi dvěma `DispUpdate`) odhadovaný čas zařízení a souhrn na konci (průměr, maximum, počet snímků nad rozpočtem); rozpočet se zadá `--frame-budget MS` (výchozí 33 ms ≈ 30 fps).
+- **Režimy** `--perf off|report|throttle`: `throttle` (výchozí) model počítá a hru podle něj zpomalí; `report` jen počítá a hlásí, tempo nemění; `off` model vypne (přenos na displej pak řídí jen `--fast-display`). Model je deterministický, determinismus headless režimu tedy zůstává.
+- Výchozí `throttle` je **moje rozhodnutí**: cílem je vidět problém tak, jak by vypadal na zařízení.
+
+**Úroveň 2 – odhad vlastního kódu hry (později, není součástí milníku 4):** změřit na PC čas strávený kódem hry mezi voláními SDK a vynásobit ho kalibračním koeficientem. Je nepřesná (poměr PC/M0+ se liší podle typu výpočtu, hlavně u desetinných čísel) a měření reálného času ruší determinismus, proto jen jako volitelný režim. Návrh úrovně 1 ji nesmí zablokovat: čas zařízení má mít jedno místo, kam lze později přičítat i tento odhad.
+
+**Úroveň 3 – přesné časy:** mimo tento projekt; patří k případné emulaci procesoru RP2040.
+
 ### Sestavení her
 
 - CMake funkce `picopad_add_game(<jméno> <adresář hry>)` přečte z `Makefile` hry řádky `SRC +=` / `CSRC +=` a vytvoří `<jméno>.exe` slinkované s host knihovnou. Include cesty: adresář hry (kvůli `config.h`/`include.h`) a kořen SDK. Tím jde přeložit libovolnou hru z repa bez psaní CMake pro každou zvlášť.
@@ -150,6 +174,7 @@ Hra běží na vlastním vlákně ("herní vlákno"); hlavní vlákno obsluhuje 
 
 ```
 TETRIS.exe [--scale N] [--keys letters|layout] [--fast-display] [--sd card.img] [--seed N]
+           [--perf off|report|throttle] [--frame-budget MS]
            [--headless] [--script input.txt] [--max-time 60s]
            [--shot-dir DIR] [--wav out.wav] [--trace-keys]
 ```
@@ -172,6 +197,7 @@ Headless režim skončí na `quit`, na `--max-time` (exit code ≠ 0, aby agent 
 1. **TETRIS interaktivně:** přeloží se beze změn, běží v okně, ovládání klávesnicí, zvuk, Y ukončí. Kontrola očima proti zařízení. Navíc ukázková hra mimo strom SDK se přeloží pro emulátor i jako UF2 pro zařízení.
 2. **Headless režim:** virtuální čas, skript, PNG, determinismus. Automatický test: skript pro TETRIS, dvě spuštění dají bajtově shodné PNG; referenční PNG uložené v tests/.
 3. **Pokrytí repa a SD:** zkusit přeložit a spustit headless všechny hry z PicoPad/GAME a PicoPad/TINYGAME (snímek po pár sekundách), vytvořit přehled co funguje a co ne; podpora obrazu SD karty.
+4. **Odhad výkonu zařízení (úroveň 1):** benchmarková aplikace pro kalibraci na Picopadu, nákladový model kreslení, přenosu na displej a mixéru, režimy `--perf`, ukazatel v okně a statistiky v headless logu. Ověření: pro několik her z repa porovnat odhadované časy snímků s časy naměřenými na zařízení a uvést odchylku.
 
 ## Co je na implementátorovi
 
