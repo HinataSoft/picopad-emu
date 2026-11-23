@@ -106,7 +106,17 @@ Hra běží na vlastním vlákně ("herní vlákno"); hlavní vlákno obsluhuje 
 ### Klávesy
 
 - `GPIO_In(pin)` pro piny tlačítek vrací stav z bitové masky, kterou plní platformní vrstva (klávesnice/gamepad) nebo skript. `KeyScan()` z SDK tedy běží beze změny, včetně debounce a bufferu.
-- Výchozí mapování (návrh): šipky = D-pad, X = A, Z = B, S = X, A = Y, Esc = Y. Gamepad přes SDL GameController: D-pad/levá páčka, tlačítka podle polohy. Konfigurovatelnost je nice-to-have.
+- Mapování kláves (rozhodnutí uživatele), přepínané volbou `--keys`:
+  - `--keys=letters` (výchozí): šipky = D-pad, klávesy A, B, X, Y = stejnojmenná tlačítka Picopadu, Esc = Y. Důvod: když hra napíše "stiskni Y", uživatel zmáčkne Y.
+  - `--keys=layout`: šipky = D-pad a čtverec kláves kopíruje fyzické rozložení Picopadu, Esc = Y.
+
+    ```
+    Picopad:  X Y      klávesnice:  A S
+              A B                   Z X
+    ```
+
+    Tedy A = X, S = Y, Z = A, X = B. Pozor: rozložení Picopadu je zrcadlové vůči SNES (tam je A vpravo a B dole).
+- Gamepad přes SDL GameController: D-pad/levá páčka, tlačítka podle fyzické polohy (nice-to-have). Další konfigurovatelnost mapování je nice-to-have.
 
 ### Zvuk
 
@@ -139,7 +149,7 @@ Hra běží na vlastním vlákně ("herní vlákno"); hlavní vlákno obsluhuje 
 ### Rozhraní příkazové řádky (každý .exe hry)
 
 ```
-TETRIS.exe [--scale N] [--fast-display] [--sd card.img] [--seed N]
+TETRIS.exe [--scale N] [--keys letters|layout] [--fast-display] [--sd card.img] [--seed N]
            [--headless] [--script input.txt] [--max-time 60s]
            [--shot-dir DIR] [--wav out.wav] [--trace-keys]
 ```
