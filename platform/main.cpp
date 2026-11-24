@@ -145,13 +145,16 @@ static void plat_logf(const char* fmt, ...)
 
 static keymap_mode Keys;
 static keylatch Latch;
+// pressed keys indexed by scancode; ScanKey = keycode (label) seen at the
+// press, so a release (same scancode) clears exactly what the press set
 static unsigned char ScanDown[SDL_NUM_SCANCODES];
+static SDL_Keycode ScanKey[SDL_NUM_SCANCODES];
 
 static unsigned int raw_key_bits(void)
 {
 	unsigned int bits = 0;
 	for (int sc = 0; sc < SDL_NUM_SCANCODES; sc++)
-		if (ScanDown[sc]) bits |= keymap_bit(Keys, sc);
+		if (ScanDown[sc]) bits |= keymap_bit(Keys, sc, (int)ScanKey[sc]);
 	return bits;
 }
 
@@ -347,6 +350,7 @@ int main(int argc, char* argv[])
 				if (e.key.keysym.scancode >= 0 && e.key.keysym.scancode < SDL_NUM_SCANCODES)
 				{
 					ScanDown[e.key.keysym.scancode] = (e.type == SDL_KEYDOWN);
+					if (e.type == SDL_KEYDOWN) ScanKey[e.key.keysym.scancode] = e.key.keysym.sym;
 					keys_update();
 				}
 				break;

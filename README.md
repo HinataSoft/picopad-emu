@@ -52,7 +52,7 @@ Klávesy:
 | X | X | A |
 | Y | Y, Esc | S, Esc |
 
-V rozložení `layout` tvoří klávesy A S / Z X čtverec, který kopíruje fyzické rozmístění tlačítek X Y / A B na Picopadu.
+Mapování `letters` se řídí popiskem klávesy podle aktivního rozložení klávesnice (na české QWERTZ funguje klávesa s popiskem Y). V rozložení `layout` se klávesy berou podle fyzické polohy (pozice A S / Z X na americké klávesnici, na QWERTZ tedy A S / Y X) a tvoří čtverec, který kopíruje fyzické rozmístění tlačítek X Y / A B na Picopadu.
 
 Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty; 3 = vypršel `--max-time`.
 

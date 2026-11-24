@@ -1,5 +1,5 @@
 /* Keyboard mapping and tap latch. Pure C: no SDL, no SDK headers.
-   Scancodes are plain ints with SDL2 values. */
+   Scancodes and keycodes are plain ints with SDL2 values. */
 #ifndef PICOPAD_PLATFORM_KEYMAP_H
 #define PICOPAD_PLATFORM_KEYMAP_H
 
@@ -11,8 +11,11 @@ extern "C" {
 
 typedef enum { KEYMAP_LETTERS = 0, KEYMAP_LAYOUT = 1 } keymap_mode;
 
-/* PLAT_KEY_BIT(code) for the Picopad key mapped to the scancode, or 0 */
-unsigned int keymap_bit(keymap_mode mode, int sdl_scancode);
+/* PLAT_KEY_BIT(code) for the Picopad key mapped to a PC key, or 0.
+   KEYMAP_LETTERS maps by the key LABEL (sdl_keycode, follows the keyboard
+   layout: Y works on Czech QWERTZ too); KEYMAP_LAYOUT maps by the PHYSICAL
+   position (sdl_scancode), so A S / Z X form a square on any layout. */
+unsigned int keymap_bit(keymap_mode mode, int sdl_scancode, int sdl_keycode);
 
 /* Tap latch: keeps a pressed bit set for at least KEYLATCH_HOLD_US after its
    press, so a tap shorter than one 5 ms SysTick period is not lost. */
