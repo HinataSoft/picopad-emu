@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 project(picopad_emu C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
@@ -9,6 +9,11 @@ set(PICOLIBSDK_DIR "${CMAKE_SOURCE_DIR}/../PicoLibSDK" CACHE PATH "Adresar PicoL
 
 # SDL2 devel (mingw, i686); sdl2-config.cmake definuje SDL2::SDL2 a SDL2::SDL2main
 file(GLOB _sdl2_roots "${PICOPAD_TOOLCHAIN_DIR}/SDL2-*/i686-w64-mingw32")
+if(NOT _sdl2_roots)
+    message(FATAL_ERROR "SDL2 nenalezeno: chybi ${PICOPAD_TOOLCHAIN_DIR}/SDL2-<verze>/i686-w64-mingw32. "
+        "Stahnete SDL2-devel-2.32.10-mingw.zip (github.com/libsdl-org/SDL/releases) a rozbalte do "
+        "${PICOPAD_TOOLCHAIN_DIR} (viz README.md, sekce Toolchain), pripadne nastavte PICOPAD_TOOLCHAIN_DIR.")
+endif()
 list(SORT _sdl2_roots)
 list(REVERSE _sdl2_roots)
 list(GET _sdl2_roots 0 _sdl2_root)
