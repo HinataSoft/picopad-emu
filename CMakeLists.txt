@@ -18,27 +18,18 @@ set(SDL2_DIR "${_sdl2_root}/lib/cmake/SDL2" CACHE PATH "SDL2 cmake config" FORCE
 set(SDL2_NO_MWINDOWS ON)
 find_package(SDL2 REQUIRED CONFIG)
 
-# Vysledne exe bezi bez MinGW bin v PATH
-add_link_options(-static-libgcc -static-libstdc++)
-
 enable_testing()
 
-# Pomocna funkce: po sestaveni zkopiruje SDL2.dll vedle exe
-function(picopad_copy_sdl2_dll target)
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:${target}>)
-endfunction()
+# Prenositelne knihovny PicoLibSDK prelozene pro host; definuje i
+# picopad_exe_runtime() (staticke runtime MinGW, kopie SDL2.dll vedle exe)
+include(cmake/picopad.cmake)
 
 add_executable(test_toolchain tests/test_toolchain.c)
 target_include_directories(test_toolchain PRIVATE tests)
 # SDL2main dodava WinMain, takze main() z testu funguje i na MinGW
 target_link_libraries(test_toolchain PRIVATE SDL2::SDL2main SDL2::SDL2)
-picopad_copy_sdl2_dll(test_toolchain)
+picopad_exe_runtime(test_toolchain SDL2)
 add_test(NAME toolchain COMMAND test_toolchain)
-
-# Prenositelne knihovny PicoLibSDK prelozene pro host
-include(cmake/picopad.cmake)
 # SDK + host vrstva s testovaci konfiguraci (pouzivaji ji unit testy)
 picopad_sdk_objects(sdk_objs_test tests/config)
 # C++ kontrola hlavicek SDK (vsechny hry jsou .cpp); jen preklad
@@ -54,6 +45,7 @@ function(picopad_host_test name)
     picopad_sdk_compile_options(test_${name} tests/config)
     target_include_directories(test_${name} PRIVATE tests)
     target_link_libraries(test_${name} PRIVATE plat_fake)
+    picopad_exe_runtime(test_${name})
     add_test(NAME ${name} COMMAND test_${name})
 endfunction()
 picopad_host_test(clock)
@@ -70,6 +62,7 @@ add_library(platform_keymap STATIC platform/keymap.c)
 add_executable(test_keymap tests/test_keymap.c)
 target_include_directories(test_keymap PRIVATE tests)
 target_link_libraries(test_keymap PRIVATE platform_keymap)
+picopad_exe_runtime(test_keymap)
 add_test(NAME keymap COMMAND test_keymap)
 
 # Hra TETRIS (zdrojaky beze zmen) -> TETRIS.exe
@@ -78,6 +71,7 @@ picopad_add_game(TETRIS ${PICOLIBSDK_DIR}/PicoPad/GAME/TETRIS)
 # Prikazova radka herniho .exe (ciste C)
 add_executable(test_cli tests/test_cli.c platform/cli.c)
 target_include_directories(test_cli PRIVATE tests)
+picopad_exe_runtime(test_cli)
 add_test(NAME cli COMMAND test_cli)
 
 # Cteni radku SRC +=/CSRC += z Makefile hry
@@ -119,3 +113,10 @@ if((_picopad_arm OR _picopad_arm_in_path) AND PICOPAD_PYTHON)
 else()
     message(STATUS "arm-none-eabi-gcc or python not found: hello_device test not registered")
 endif()
+
+# Exe bezi bez MinGW DLL (libwinpthread-1.dll apod.): test_clock s PATH jen
+# na systemove adresare Windows musi skoncit kodem 0
+add_test(NAME runtime_deps
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:test_clock>
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_deps_test.cmake)
+set_tests_properties(runtime_deps PROPERTIES TIMEOUT 60)

@@ -130,6 +130,22 @@ function(picopad_sdk_objects target config_dir)
 endfunction()
 
 # ----------------------------------------------------------------------------
+# picopad_exe_runtime(<target> [SDL2])
+#   Kazde exe projektu: MinGW runtime (libgcc, libstdc++, libwinpthread) se
+#   linkuje staticky (-static), takze exe nepotrebuje zadnou DLL z MinGW
+#   (jen systemove DLL Windows a SDL2.dll). SDL2 zustava dynamicka pres svou
+#   importni knihovnu. S volbou SDL2 se po sestaveni zkopiruje SDL2.dll vedle exe.
+# ----------------------------------------------------------------------------
+function(picopad_exe_runtime target)
+    target_link_options(${target} PRIVATE -static)
+    if("SDL2" IN_LIST ARGN)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:${target}>)
+    endif()
+endfunction()
+
+# ----------------------------------------------------------------------------
 # picopad_add_game(<NAME> <GAME_DIR>)
 #   Builds an unchanged PicoLibSDK game into <NAME>.exe (window title <NAME>):
 #    - sources = the SRC +=/CSRC += lines of <GAME_DIR>/Makefile (relative to
@@ -138,8 +154,8 @@ endfunction()
 #    - SDK + host layer = picopad_sdk_objects(<NAME>_sdk <GAME_DIR>) (the game's
 #      own config.h/include.h live in <GAME_DIR>);
 #    - host/game_entry.cpp and platform/ (SDL2 window, audio, CLI) in the exe;
-#    - links SDL2main + SDL2 (+ winmm), -static-libgcc -static-libstdc++, and
-#      copies SDL2.dll next to the exe.
+#    - links SDL2main + SDL2 (+ winmm) via picopad_exe_runtime(): static MinGW
+#      runtime, SDL2.dll copied next to the exe.
 #   Writes nothing into <GAME_DIR> or the SDK.
 # ----------------------------------------------------------------------------
 include("${CMAKE_CURRENT_LIST_DIR}/parse_makefile.cmake")
@@ -179,8 +195,5 @@ function(picopad_add_game name game_dir)
     )
     target_compile_definitions(${name} PRIVATE "PICOPAD_GAME_NAME=\"${name}\"")
     target_link_libraries(${name} PRIVATE SDL2::SDL2main SDL2::SDL2 winmm)
-    target_link_options(${name} PRIVATE -static-libgcc -static-libstdc++)
-    add_custom_command(TARGET ${name} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:${name}>)
+    picopad_exe_runtime(${name} SDL2)
 endfunction()
