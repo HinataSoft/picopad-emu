@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(picopad_emu C CXX)
+project(picopad_emu C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -36,9 +36,25 @@ add_test(NAME toolchain COMMAND test_toolchain)
 
 # Prenositelne knihovny PicoLibSDK prelozene pro host
 include(cmake/picopad.cmake)
+# SDK + host vrstva s testovaci konfiguraci (pouzivaji ji unit testy)
 picopad_sdk_objects(sdk_objs_test tests/config)
-# C++ kontrola hlavicek SDK (vsechny hry jsou .cpp)
-target_sources(sdk_objs_test PRIVATE tests/config/cpp_check.cpp)
+# C++ kontrola hlavicek SDK (vsechny hry jsou .cpp); jen preklad
+add_library(sdk_cpp_check OBJECT tests/config/cpp_check.cpp)
+picopad_sdk_compile_options(sdk_cpp_check tests/config)
+
+# Falesna platforma pro unit testy (jen plat_api.h, bez SDK)
+add_library(plat_fake STATIC tests/plat_fake.c)
+
+# Unit test host vrstvy: <name> = tests/test_<name>.c, hra je definovana v testu
+function(picopad_host_test name)
+    add_executable(test_${name} tests/test_${name}.c $<TARGET_OBJECTS:sdk_objs_test>)
+    picopad_sdk_compile_options(test_${name} tests/config)
+    target_include_directories(test_${name} PRIVATE tests)
+    target_link_libraries(test_${name} PRIVATE plat_fake)
+    add_test(NAME ${name} COMMAND test_${name})
+endfunction()
+picopad_host_test(clock)
+picopad_host_test(rom)
 
 # Realna kontrola: zdrojaky hry TETRIS (beze zmen) se prelozi s host hlavickami
 set(_tetris "${PICOPAD_SDK_ABS}/PicoPad/GAME/TETRIS")

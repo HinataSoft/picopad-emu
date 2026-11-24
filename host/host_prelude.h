@@ -40,6 +40,12 @@
 #define __unused __attribute__((unused))
 #endif
 
+// MinGW <limits.h> defines PATH_MAX 260, lib_fat.h redefines it to 254
+// without #undef (warning). Include <limits.h> first and drop its value, so
+// PATH_MAX is always the SDK one, whatever the include order.
+#include <limits.h>
+#undef PATH_MAX
+
 // SDK base definitions and configuration (config.h of the game)
 #include "global.h"
 

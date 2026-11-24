@@ -5,7 +5,8 @@
 #   Vytvori OBJECT knihovnu <target> se zdroji SDK vyjmenovanymi nize.
 #   <config_dir> (relativne k CMAKE_SOURCE_DIR nebo absolutne) obsahuje
 #   config.h a include.h hry; je pridan do include cest spolu s PICOLIBSDK_DIR.
-#   Kazda TU dostane -include host/host_prelude.h, ktery nahradi hardwarove
+#   Obsahuje i hostitelske zdroje PICOPAD_HOST_SOURCES (host/*.c, heap.S).
+#   Kazda C/C++ TU dostane -include host/host_prelude.h, ktery nahradi hardwarove
 #   hlavicky SDK (sdk_cpu.h, sdk_timer.h, ...) hostitelskymi verzemi.
 #
 #   Rozsireni (Task 3+): dalsi zdroje (host implementace, hra) se pridavaji
@@ -58,6 +59,31 @@ set(PICOPAD_SDK_SOURCES
     _devices/picopad/picopad_ss.c
 )
 
+# Hostitelska implementace (relativne k PICOPAD_HOST_DIR): hodiny, pumpa
+# SysTicku, runtime, stuby SDK. Pridava se do kazde picopad_sdk_objects.
+# host/game_entry.cpp sem nepatri - pridava ho az cil hry (vola C++ game_main).
+# disp.c, keys.c a audio.c jsou zatim zastupne (nahradi je Task 4/5/6).
+set(PICOPAD_HOST_SOURCES
+    clock.c
+    pump.c
+    runtime.c
+    sdk_stubs.c
+    sd.c
+    bat.c
+    heap.S
+    disp.c
+    keys.c
+    audio.c
+)
+
+# lib_fat.c: CheckApp() cte hlavicku aplikace primo z flash
+# (XIP_BASE + BOOTLOADER_SIZE), coz na hostu spadne. Bez zmeny SDK to nejde
+# obejit, proto se v teto jedine TU prejmenuji CheckApp, CheckAppPath
+# a GetHomePath (volaji se navzajem) a host/sdk_stubs.c definuje nahrady,
+# ktere hlasi "zadna aplikace". CheckLoaderData zustava (cte LoaderData[]).
+set_source_files_properties("${PICOPAD_SDK_ABS}/_lib/src/lib_fat.c" PROPERTIES
+    COMPILE_DEFINITIONS "CheckApp=sdk_unused_CheckApp;CheckAppPath=sdk_unused_CheckAppPath;GetHomePath=sdk_unused_GetHomePath")
+
 # Volby prekladu kodu SDK (viz Global Constraints)
 function(picopad_sdk_compile_options target config_dir)
     get_filename_component(_cfg "${config_dir}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
@@ -80,10 +106,11 @@ function(picopad_sdk_compile_options target config_dir)
         _UINTPTR_T_DEFINED
         _INTPTR_T_DEFINED
     )
+    # prelude a volby jazyka C jen pro C/C++ (ne pro host/heap.S)
     target_compile_options(${target} PRIVATE
-        "SHELL:-include \"${PICOPAD_HOST_DIR}/host_prelude.h\""
-        -funsigned-char
-        -fno-strict-aliasing
+        "$<$<COMPILE_LANGUAGE:C,CXX>:SHELL:-include \"${PICOPAD_HOST_DIR}/host_prelude.h\">"
+        $<$<COMPILE_LANGUAGE:C,CXX>:-funsigned-char>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fno-strict-aliasing>
         $<$<COMPILE_LANGUAGE:C>:-std=gnu11>
         $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17 -fno-exceptions -fno-rtti>
     )
@@ -93,6 +120,9 @@ function(picopad_sdk_objects target config_dir)
     set(_srcs)
     foreach(_s IN LISTS PICOPAD_SDK_SOURCES)
         list(APPEND _srcs "${PICOPAD_SDK_ABS}/${_s}")
+    endforeach()
+    foreach(_s IN LISTS PICOPAD_HOST_SOURCES)
+        list(APPEND _srcs "${PICOPAD_HOST_DIR}/${_s}")
     endforeach()
     add_library(${target} OBJECT ${_srcs})
     set_target_properties(${target} PROPERTIES C_EXTENSIONS ON CXX_EXTENSIONS ON)
