@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "i686 MinGW + Ninja",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "${sourceDir}/../toolchain/mingw32/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "${sourceDir}/../toolchain/mingw32/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/../toolchain/ninja/ninja.exe"
+      }
+    }
+  ]
+}
