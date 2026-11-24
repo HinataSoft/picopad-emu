@@ -9,7 +9,7 @@
 #   Kazda C/C++ TU dostane -include host/host_prelude.h, ktery nahradi hardwarove
 #   hlavicky SDK (sdk_cpu.h, sdk_timer.h, ...) hostitelskymi verzemi.
 #
-#   Rozsireni (Task 3+): dalsi zdroje (host implementace, hra) se pridavaji
+#   Rozsireni: dalsi zdroje (host implementace, hra) se pridavaji
 #   pres  target_sources(<target> PRIVATE ...)  - dostanou stejne volby,
 #   protoze vsechny volby jsou PRIVATE vlastnosti teto OBJECT knihovny.
 #   Objekty se pouziji v exe pres $<TARGET_OBJECTS:<target>> nebo
@@ -62,7 +62,7 @@ set(PICOPAD_SDK_SOURCES
 # Hostitelska implementace (relativne k PICOPAD_HOST_DIR): hodiny, pumpa
 # SysTicku, runtime, stuby SDK. Pridava se do kazde picopad_sdk_objects.
 # host/game_entry.cpp sem nepatri - pridava ho az cil hry (vola C++ game_main).
-# disp.c, keys.c a audio.c jsou zatim zastupne (nahradi je Task 4/5/6).
+# disp.c (displej), keys.c (klavesy pres GPIO) a audio.c (PWM zvuk, mixer).
 set(PICOPAD_HOST_SOURCES
     clock.c
     pump.c

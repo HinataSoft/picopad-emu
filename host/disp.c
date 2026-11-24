@@ -1,6 +1,6 @@
 // ****************************************************************************
 //
-//               Host runtime - display (placeholder — replaced in Task 4)
+//                         Host runtime - display
 //
 // ****************************************************************************
 // Replacement of the ST7789 driver. The SDK draws into FrameBuf and marks a
