@@ -17,8 +17,9 @@
 //    game is busy-waiting; sleep 200 us to spare the host core
 //
 // IRQ mutex: host_irq_lock/unlock (LockIRQ, IRQ_LOCK, di/ei) is a recursive
-// lock shared by all threads; it serializes the game thread with the audio
-// thread (host_audio_render, Task 6). The nesting depth is per thread; an
+// lock shared by all threads; it is shared with any other thread that needs
+// to serialize against IRQ_LOCK sections (the audio thread does not: it only
+// drains a ring buffer, see audio.c). The nesting depth is per thread; an
 // unmatched unlock (ei() without di()) is ignored.
 
 #include "host_internal.h"
@@ -128,6 +129,8 @@ void host_pump(void)
 		LastTick += PUMP_TICK_US;
 		SysTickHandler();
 	}
+
+	host_audio_pump();
 
 	if (!host_cfg()->virtual_clock)
 	{

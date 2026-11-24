@@ -121,7 +121,7 @@ Hra běží na vlastním vlákně ("herní vlákno"); hlavní vlákno obsluhuje 
 ### Zvuk
 
 - `SetHandler(IRQ_PWM_WRAP, fn)` si handler uloží, `PWM_Comp` uloží poslední vzorek, `PWM_Enable` nastaví příznak "zvuk běží".
-- Interaktivně: SDL audio callback (mono, 44100 Hz nebo co vyjde zařízení) pod globálním IRQ mutexem volá uložený handler jednou za výstupní vzorek a převádí `(samp-1024)*32` na s16. Před prvním `PWM_Enable` posílá ticho. `CurrentFreq[CLK_SYS]` se nastaví na `2048 * frekvence` před `DeviceInit`.
+- Interaktivně: mixer (uložený handler) běží jen na herním vlákně – pumpa ho volá po jednom na výstupní vzorek a doplňuje SPSC kruhový buffer (8192 vzorků, cíl 2048 ≈ 46 ms) hodnotami `(samp-1024)*32` jako s16; SDL audio callback jen čte z bufferu (při podtečení opakuje poslední hodnotu) a nikdy nevolá kód SDK, protože zvukové API SDK (`PlaySoundChan`, `StopSoundChan`) není thread-safe proti paralelnímu mixeru. Před prvním `PWM_Enable` je ticho (0). `CurrentFreq[CLK_SYS]` se nastaví na `2048 * frekvence` před `DeviceInit`.
 - Headless: mixer se volá podle virtuálního času na herním vlákně (pumpa), aby chování bylo stejné a deterministické; volitelně se vzorky zapíšou do WAV (`--wav`).
 
 ### SD karta

@@ -41,6 +41,12 @@ void host_set_game_thread(int on);
 // calling thread (start of host_run_game and after longjmp out of the game)
 void host_pump_reset(void);
 
+// --- audio.c
+
+// game thread (from host_pump): run the stored PWM-wrap handler to top up the
+// audio ring buffer; does nothing without audio device or before PWM enable
+void host_audio_pump(void);
+
 // --- runtime.c
 
 // game entry: C++ shim host/game_entry.cpp in game builds, defined by C tests
