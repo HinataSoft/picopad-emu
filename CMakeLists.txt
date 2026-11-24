@@ -56,6 +56,14 @@ endfunction()
 picopad_host_test(clock)
 picopad_host_test(rom)
 picopad_host_test(display)
+picopad_host_test(keys)
+
+# Mapovani klaves a tap latch: cista C knihovna bez SDL a SDK
+add_library(platform_keymap STATIC platform/keymap.c)
+add_executable(test_keymap tests/test_keymap.c)
+target_include_directories(test_keymap PRIVATE tests)
+target_link_libraries(test_keymap PRIVATE platform_keymap)
+add_test(NAME keymap COMMAND test_keymap)
 
 # Realna kontrola: zdrojaky hry TETRIS (beze zmen) se prelozi s host hlavickami
 set(_tetris "${PICOPAD_SDK_ABS}/PicoPad/GAME/TETRIS")
