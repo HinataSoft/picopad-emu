@@ -78,12 +78,15 @@ static void short_waits_game(void)
     u64 t0 = Time64();
     unsigned long long r0 = fake_now;
     int s0 = fake_sleep_count;
+    u64 prev = t0;
     short_min_ok = 1;
     for (i = 0; i < 100; i++)
     {
         u64 t = Time64();
+        if (t < prev) short_min_ok = 0; /* monotonic */
         WaitUs(170);
-        if (Time64() - t < 170) short_min_ok = 0;
+        prev = Time64();
+        if (prev - t < 170) short_min_ok = 0;
     }
     short_emul_delta = Time64() - t0;
     short_real_delta = fake_now - r0;
@@ -96,15 +99,19 @@ static void compute_game(void)
        computes ~3 ms without waiting (fake clock jumps); the next WaitUs(100)
        must still advance Time64 by >= 100 us (compute time is not forgiven) */
     int i;
-    u64 t;
+    u64 t, prev = 0;
     compute_ok = 1;
     for (i = 0; i < 3; i++)
     {
         WaitUs(170);
         fake_now += 3000; /* computing */
         t = Time64();
+        if (t < prev) compute_ok = 0; /* monotonic */
         WaitUs(100);
-        if (Time64() - t < 100) compute_ok = 0;
+        prev = Time64();
+        if (prev - t < 100) compute_ok = 0;
+        /* emulated time leads real time by less than 1 ms */
+        if (prev < fake_now - 3000000 || prev - (fake_now - 3000000) >= 1000) compute_ok = 0;
     }
 }
 

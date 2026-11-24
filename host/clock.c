@@ -85,6 +85,8 @@ void host_wait_us(unsigned long long us)
 		return;
 	}
 
+	// host_now_us() >= WaitDeadline always, so assigning (not max'ing) keeps
+	// the deadline - and with it the emulated time - monotonic
 	WaitDeadline = host_now_us() + us;
 	for (;;)
 	{
