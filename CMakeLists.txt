@@ -13,6 +13,9 @@ list(SORT _sdl2_roots)
 list(REVERSE _sdl2_roots)
 list(GET _sdl2_roots 0 _sdl2_root)
 set(SDL2_DIR "${_sdl2_root}/lib/cmake/SDL2" CACHE PATH "SDL2 cmake config" FORCE)
+# exe jsou konzolove aplikace (bez -mwindows): hlasky na stderr, Ctrl+C a
+# navratovy kod funguji i z cmd
+set(SDL2_NO_MWINDOWS ON)
 find_package(SDL2 REQUIRED CONFIG)
 
 # Vysledne exe bezi bez MinGW bin v PATH
@@ -69,15 +72,22 @@ target_include_directories(test_keymap PRIVATE tests)
 target_link_libraries(test_keymap PRIVATE platform_keymap)
 add_test(NAME keymap COMMAND test_keymap)
 
-# Realna kontrola: zdrojaky hry TETRIS (beze zmen) se prelozi s host hlavickami
-set(_tetris "${PICOPAD_SDK_ABS}/PicoPad/GAME/TETRIS")
-add_library(tetris_objs_check OBJECT
-    ${_tetris}/src/main.cpp
-    ${_tetris}/img/tiles.cpp
-    ${_tetris}/snd/brick.cpp
-    ${_tetris}/snd/gameover.cpp
-    ${_tetris}/snd/levelup.cpp
-    ${_tetris}/snd/line.cpp
-)
-picopad_sdk_compile_options(tetris_objs_check "${_tetris}")
-target_compile_definitions(tetris_objs_check PRIVATE main=game_main)
+# Hra TETRIS (zdrojaky beze zmen) -> TETRIS.exe
+picopad_add_game(TETRIS ${PICOLIBSDK_DIR}/PicoPad/GAME/TETRIS)
+
+# Prikazova radka herniho .exe (ciste C)
+add_executable(test_cli tests/test_cli.c platform/cli.c)
+target_include_directories(test_cli PRIVATE tests)
+add_test(NAME cli COMMAND test_cli)
+
+# Cteni radku SRC +=/CSRC += z Makefile hry
+add_test(NAME parse_makefile
+         COMMAND ${CMAKE_COMMAND} -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parse_makefile_test.cmake)
+
+# TETRIS bezi 2 s (okno + zvuk) a skonci kodem 3 (vyprsel --max-time)
+add_test(NAME tetris_smoke
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:TETRIS> -DEXPECT=3
+                 "-DARGS=--max-time;2s;--fast-display"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_exit.cmake)
+set_tests_properties(tetris_smoke PROPERTIES TIMEOUT 20)

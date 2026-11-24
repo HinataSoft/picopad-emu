@@ -128,3 +128,59 @@ function(picopad_sdk_objects target config_dir)
     set_target_properties(${target} PROPERTIES C_EXTENSIONS ON CXX_EXTENSIONS ON)
     picopad_sdk_compile_options(${target} "${config_dir}")
 endfunction()
+
+# ----------------------------------------------------------------------------
+# picopad_add_game(<NAME> <GAME_DIR>)
+#   Builds an unchanged PicoLibSDK game into <NAME>.exe (window title <NAME>):
+#    - sources = the SRC +=/CSRC += lines of <GAME_DIR>/Makefile (relative to
+#      <GAME_DIR>), compiled in OBJECT library <NAME>_game with the SDK options
+#      and -Dmain=game_main (only these sources);
+#    - SDK + host layer = picopad_sdk_objects(<NAME>_sdk <GAME_DIR>) (the game's
+#      own config.h/include.h live in <GAME_DIR>);
+#    - host/game_entry.cpp and platform/ (SDL2 window, audio, CLI) in the exe;
+#    - links SDL2main + SDL2 (+ winmm), -static-libgcc -static-libstdc++, and
+#      copies SDL2.dll next to the exe.
+#   Writes nothing into <GAME_DIR> or the SDK.
+# ----------------------------------------------------------------------------
+include("${CMAKE_CURRENT_LIST_DIR}/parse_makefile.cmake")
+set(PICOPAD_PLATFORM_DIR "${CMAKE_CURRENT_LIST_DIR}/../platform")
+get_filename_component(PICOPAD_PLATFORM_DIR "${PICOPAD_PLATFORM_DIR}" ABSOLUTE)
+
+function(picopad_add_game name game_dir)
+    get_filename_component(_dir "${game_dir}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    set(_mk "${_dir}/Makefile")
+    picopad_parse_makefile("${_mk}" _rel _asm)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_mk}")
+    if(NOT _rel)
+        message(FATAL_ERROR "picopad_add_game(${name}): no SRC/CSRC sources in ${_mk}")
+    endif()
+    if(_asm)
+        message(WARNING "picopad_add_game(${name}): ASRC sources are not supported, ignored: ${_asm}")
+    endif()
+    set(_srcs)
+    foreach(_s IN LISTS _rel)
+        list(APPEND _srcs "${_dir}/${_s}")
+    endforeach()
+
+    picopad_sdk_objects(${name}_sdk "${_dir}")
+
+    add_library(${name}_game OBJECT ${_srcs})
+    set_target_properties(${name}_game PROPERTIES C_EXTENSIONS ON CXX_EXTENSIONS ON)
+    picopad_sdk_compile_options(${name}_game "${_dir}")
+    target_compile_definitions(${name}_game PRIVATE main=game_main)
+
+    add_executable(${name}
+        "${PICOPAD_HOST_DIR}/game_entry.cpp"
+        "${PICOPAD_PLATFORM_DIR}/main.cpp"
+        "${PICOPAD_PLATFORM_DIR}/cli.c"
+        "${PICOPAD_PLATFORM_DIR}/keymap.c"
+        $<TARGET_OBJECTS:${name}_game>
+        $<TARGET_OBJECTS:${name}_sdk>
+    )
+    target_compile_definitions(${name} PRIVATE "PICOPAD_GAME_NAME=\"${name}\"")
+    target_link_libraries(${name} PRIVATE SDL2::SDL2main SDL2::SDL2 winmm)
+    target_link_options(${name} PRIVATE -static-libgcc -static-libstdc++)
+    add_custom_command(TARGET ${name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL2::SDL2> $<TARGET_FILE_DIR:${name}>)
+endfunction()
