@@ -1,3 +1,13 @@
 build/
 deps/
 .superpowers/
+
+examples/HELLO/*.bin
+examples/HELLO/*.uf2
+examples/HELLO/*.elf
+examples/HELLO/*.hex
+examples/HELLO/*.lst
+examples/HELLO/*.sym
+examples/HELLO/*.siz
+examples/HELLO/*.map
+examples/HELLO/build/

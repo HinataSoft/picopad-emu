@@ -56,4 +56,22 @@ V rozložení `layout` tvoří klávesy A S / Z X čtverec, který kopíruje fyz
 
 Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty; 3 = vypršel `--max-time`.
 
+## Hra mimo strom SDK (HELLO) a build pro zařízení
+
+`examples/HELLO` je minimální hra mimo PicoLibSDK (vlastní `Makefile` s `PICO_ROOT_PATH = ../../../PicoLibSDK`). Z jedněch zdrojáků vzniká `build\HELLO.exe` pro emulátor i `HELLO.uf2` pro Picopad.
+
+Build pro zařízení (potřebuje `arm-none-eabi-gcc`; když není v PATH, skript ho najde v `C:\Program Files (x86)\Arm GNU Toolchain arm-none-eabi\*\bin`):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_device.ps1 -GameDir examples\HELLO -Device picopad10
+```
+
+Název výstupu je jméno adresáře hry, výsledek je `examples\HELLO\HELLO.uf2` (s CRC pro loader, přidaným `LoaderCrc.exe`). Do stromu SDK se nic nekopíruje. Volitelný `-SdkDir` mění cestu k SDK (výchozí `..\PicoLibSDK`). Kontrola UF2:
+
+```
+C:\Progs\anaconda3\python.exe -I tools\uf2check.py examples\HELLO\HELLO.uf2
+```
+
+Ověří UF2 bloky a rodinu čipu, značky PPAD/ppad v hlavičce aplikace a její CRC; vrací 0 při shodě, jinak 1. Test `hello_device` (label `device`) dělá obojí; bez ARM toolchainu se při configure neregistruje a jde vynechat i `ctest -LE device`. Výstupy buildu v `examples\HELLO` jsou v `.gitignore`.
+
 TODO: Ruční ověření uživatelem: čeká

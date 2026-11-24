@@ -91,3 +91,31 @@ add_test(NAME tetris_smoke
                  "-DARGS=--max-time;2s;--fast-display"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_exit.cmake)
 set_tests_properties(tetris_smoke PROPERTIES TIMEOUT 20)
+
+# Ukazkova hra mimo strom SDK -> HELLO.exe (a HELLO.uf2 pres tools/build_device.ps1)
+picopad_add_game(HELLO ${CMAKE_SOURCE_DIR}/examples/HELLO)
+add_test(NAME hello_smoke
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:HELLO> -DEXPECT=3
+                 "-DARGS=--max-time;1s;--fast-display"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_exit.cmake)
+set_tests_properties(hello_smoke PROPERTIES TIMEOUT 20)
+
+# Build pro zarizeni (ARM GCC) + kontrola UF2, label "device" (ctest -LE device
+# ho vynecha). Kdyz neni arm-none-eabi-gcc ani v PATH, ani v "Arm GNU Toolchain"
+# v Program Files, test se vubec neregistruje (hlaska pri configure).
+file(GLOB _picopad_arm
+     "C:/Program Files (x86)/Arm GNU Toolchain arm-none-eabi/*/bin/arm-none-eabi-gcc.exe")
+find_program(_picopad_arm_in_path arm-none-eabi-gcc)
+find_program(PICOPAD_PYTHON NAMES python python3 HINTS C:/Progs/anaconda3)
+if((_picopad_arm OR _picopad_arm_in_path) AND PICOPAD_PYTHON)
+    add_test(NAME hello_device
+             COMMAND ${CMAKE_COMMAND}
+                     -DGAME_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples/HELLO
+                     -DSDK_DIR=${PICOLIBSDK_DIR}
+                     -DPYTHON=${PICOPAD_PYTHON}
+                     -DTOOLS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tools
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/hello_device_test.cmake)
+    set_tests_properties(hello_device PROPERTIES LABELS device TIMEOUT 600)
+else()
+    message(STATUS "arm-none-eabi-gcc or python not found: hello_device test not registered")
+endif()
