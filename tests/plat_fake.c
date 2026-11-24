@@ -5,6 +5,8 @@
 #include "plat_fake.h"
 
 unsigned long long fake_now = 0;
+unsigned long long fake_sleep_min_us = 0;
+int fake_sleep_count = 0;
 unsigned short fake_fb[PLAT_H][PLAT_W];
 int fake_present_count = 0;
 int fake_present_x = 0, fake_present_y = 0, fake_present_w = 0, fake_present_h = 0;
@@ -14,7 +16,11 @@ int fake_log_count = 0;
 
 unsigned long long plat_now_us(void) { return fake_now; }
 
-void plat_sleep_us(unsigned long long us) { fake_now += us; }
+void plat_sleep_us(unsigned long long us)
+{
+    fake_sleep_count++;
+    fake_now += (us < fake_sleep_min_us) ? fake_sleep_min_us : us;
+}
 
 void plat_present(const unsigned short* fb, int x, int y, int w, int h)
 {

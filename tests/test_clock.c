@@ -8,8 +8,11 @@
 #include "check.h"
 #include "plat_fake.h"
 
-static int phase; /* 0 = virtual clock test, 1 = busy-wait test */
+static int phase; /* 0 = virtual clock test, 1 = busy-wait test, 2 = short waits */
 static unsigned long long busy_delta;
+static unsigned long long short_emul_delta; /* emulated time of 100 x WaitUs(170) */
+static unsigned long long short_real_delta; /* real (fake) time of the same */
+static int short_sleeps;                    /* plat_sleep_us calls during it */
 
 static u32 alarm_times[16];
 static int alarm_count;
@@ -65,12 +68,28 @@ static void busy_wait_game(void)
     busy_delta = fake_now - before;
 }
 
+static void short_waits_game(void)
+{
+    /* real clock with a 530 us minimal OS sleep: 100 short waits (a 16x16
+       DispUpdate costs 170 us) must take ~17 ms, not 100 x 530 us */
+    int i;
+    u64 t0 = Time64();
+    unsigned long long r0 = fake_now;
+    int s0 = fake_sleep_count;
+    for (i = 0; i < 100; i++) WaitUs(170);
+    short_emul_delta = Time64() - t0;
+    short_real_delta = fake_now - r0;
+    short_sleeps = fake_sleep_count - s0;
+}
+
 int host_call_game_main(void)
 {
     if (phase == 0)
         virtual_clock_game();
-    else
+    else if (phase == 1)
         busy_wait_game();
+    else
+        short_waits_game();
     return 0;
 }
 
@@ -88,6 +107,19 @@ int main(void)
     host_configure(&real);
     CHECK_EQ(host_run_game(), 0); /* game_main returned normally */
     CHECK(busy_delta >= 200);
+
+    /* short waits on the real clock: emulated time tracks the requested time */
+    phase = 2;
+    fake_now = 2000000;
+    fake_sleep_min_us = 530;
+    host_configure(&real);
+    CHECK_EQ(host_run_game(), 0);
+    fprintf(stderr, "short waits: emulated %llu us, real %llu us, %d sleeps\n",
+            short_emul_delta, short_real_delta, short_sleeps);
+    CHECK(short_emul_delta >= 16000 && short_emul_delta <= 18000);
+    CHECK(short_real_delta == short_emul_delta);
+    CHECK(short_sleeps < 30);
+    fake_sleep_min_us = 0;
 
     return CHECK_DONE();
 }
