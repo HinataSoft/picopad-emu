@@ -8,11 +8,13 @@
 #include "check.h"
 #include "plat_fake.h"
 
-static int phase; /* 0 = virtual clock test, 1 = busy-wait test, 2 = short waits */
+static int phase; /* 0 = virtual clock, 1 = busy wait, 2 = short waits, 3 = compute */
 static unsigned long long busy_delta;
 static unsigned long long short_emul_delta; /* emulated time of 100 x WaitUs(170) */
 static unsigned long long short_real_delta; /* real (fake) time of the same */
 static int short_sleeps;                    /* plat_sleep_us calls during it */
+static int short_min_ok;                    /* every WaitUs(170) advanced Time64 >= 170 */
+static int compute_ok;                      /* WaitUs(100) after computing advanced >= 100 */
 
 static u32 alarm_times[16];
 static int alarm_count;
@@ -76,10 +78,34 @@ static void short_waits_game(void)
     u64 t0 = Time64();
     unsigned long long r0 = fake_now;
     int s0 = fake_sleep_count;
-    for (i = 0; i < 100; i++) WaitUs(170);
+    short_min_ok = 1;
+    for (i = 0; i < 100; i++)
+    {
+        u64 t = Time64();
+        WaitUs(170);
+        if (Time64() - t < 170) short_min_ok = 0;
+    }
     short_emul_delta = Time64() - t0;
     short_real_delta = fake_now - r0;
     short_sleeps = fake_sleep_count - s0;
+}
+
+static void compute_game(void)
+{
+    /* real clock: a short wait leaves a carried remainder, then the game
+       computes ~3 ms without waiting (fake clock jumps); the next WaitUs(100)
+       must still advance Time64 by >= 100 us (compute time is not forgiven) */
+    int i;
+    u64 t;
+    compute_ok = 1;
+    for (i = 0; i < 3; i++)
+    {
+        WaitUs(170);
+        fake_now += 3000; /* computing */
+        t = Time64();
+        WaitUs(100);
+        if (Time64() - t < 100) compute_ok = 0;
+    }
 }
 
 int host_call_game_main(void)
@@ -88,8 +114,10 @@ int host_call_game_main(void)
         virtual_clock_game();
     else if (phase == 1)
         busy_wait_game();
-    else
+    else if (phase == 2)
         short_waits_game();
+    else
+        compute_game();
     return 0;
 }
 
@@ -117,8 +145,18 @@ int main(void)
     fprintf(stderr, "short waits: emulated %llu us, real %llu us, %d sleeps\n",
             short_emul_delta, short_real_delta, short_sleeps);
     CHECK(short_emul_delta >= 16000 && short_emul_delta <= 18000);
-    CHECK(short_real_delta == short_emul_delta);
+    /* emulated time = max(real, deadline): the carried remainder is < 1 ms */
+    CHECK(short_emul_delta >= short_real_delta);
+    CHECK(short_emul_delta - short_real_delta < 1000);
+    CHECK(short_min_ok);
     CHECK(short_sleeps < 30);
+
+    /* computing between waits is not forgiven, short waits still advance */
+    phase = 3;
+    fake_now = 3000000;
+    host_configure(&real);
+    CHECK_EQ(host_run_game(), 0);
+    CHECK(compute_ok);
     fake_sleep_min_us = 0;
 
     return CHECK_DONE();
