@@ -33,3 +33,7 @@ target_include_directories(test_toolchain PRIVATE tests)
 target_link_libraries(test_toolchain PRIVATE SDL2::SDL2main SDL2::SDL2)
 picopad_copy_sdl2_dll(test_toolchain)
 add_test(NAME toolchain COMMAND test_toolchain)
+
+# Prenositelne knihovny PicoLibSDK prelozene pro host
+include(cmake/picopad.cmake)
+picopad_sdk_objects(sdk_objs_test tests/config)
