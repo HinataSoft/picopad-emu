@@ -91,4 +91,6 @@ Ověří UF2 bloky a rodinu čipu, značky PPAD/ppad v hlavičce aplikace a jej�
 - Herní smyčka, která čeká jen na `PlayingSound()` nebo jen čte paměť bez volání SDK (bez `Time()`, `WaitMs()`, `KeyGet()` apod.), se zasekne – emulátor nemá přerušení a SysTick, klávesy i zvuk obsluhuje jen při volání SDK. Týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET. Obojí je plánované na milník 2.
 - Nevkládat `<stdio.h>` spolu s `includes.h` SDK: `getchar` z `lib_print.h` koliduje s deklarací v `stdio.h`.
 
-TODO: Ruční ověření uživatelem: čeká
+## Ověřeno
+
+2026-11-24 ručně: `TETRIS.exe` na PC hraje s obrazem, zvukem a klávesami; `HELLO.uf2` nahraný přes BOOTSEL na Picopad 1.0 vykreslí RGB čtverečky, text „HELLO PICOPAD“ a zelený obdélník.
