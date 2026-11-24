@@ -51,8 +51,15 @@ void host_wait_us(unsigned long long us)
 {
 	if (HostCfg.virtual_clock)
 	{
-		VirtNow += us;
-		host_pump();
+		// advance in steps of at most 5000 us (one SysTick period) and pump
+		// after each step, so SysTick handlers see evenly spaced Time()
+		do
+		{
+			unsigned long long step = (us > 5000) ? 5000 : us;
+			VirtNow += step;
+			us -= step;
+			host_pump();
+		} while (us > 0);
 		return;
 	}
 

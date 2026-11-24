@@ -3,12 +3,21 @@
 /* SDK headers one by one: includes.h (lib_print.h getchar) clashes with stdio.h */
 #include "_sdk/inc/sdk_systick.h"  /* SysTime */
 #include "_sdk/inc/sdk_watchdog.h" /* ResetToBootLoader */
+#include "_lib/inc/lib_alarm.h"    /* sAlarm: observer called from the SysTick handler */
 
 #include "check.h"
 #include "plat_fake.h"
 
 static int phase; /* 0 = virtual clock test, 1 = busy-wait test */
 static unsigned long long busy_delta;
+
+static u32 alarm_times[16];
+static int alarm_count;
+static void alarm_cb(sAlarm* a)
+{
+    (void)a;
+    if (alarm_count < 16) alarm_times[alarm_count++] = Time();
+}
 
 static void virtual_clock_game(void)
 {
@@ -24,6 +33,24 @@ static void virtual_clock_game(void)
     CHECK_EQ(SysTime - s0, 55);
     /* Time64 follows the same clock */
     CHECK_EQ(Time64() - t0, 55000);
+    /* waits are advanced in steps of at most 5000 us: the SysTick observer sees
+       evenly spaced Time() values instead of one final value */
+    {
+        static sAlarm al;
+        int i;
+        u32 t1;
+        al.time = SysTime + 5;
+        al.delta = 5;
+        al.callback = alarm_cb;
+        AlarmReg(&al);
+        alarm_count = 0;
+        t1 = Time();
+        WaitUs(12000);
+        CHECK_EQ(Time() - t1, 12000);
+        CHECK_EQ(alarm_count, 2);
+        for (i = 0; i < alarm_count; i++) CHECK_EQ(alarm_times[i] - t1, 5000 * (i + 1));
+        AlarmUnreg(&al);
+    }
     ResetToBootLoader(); /* host_run_game returns 0 */
     CHECK(0);            /* not reached */
 }

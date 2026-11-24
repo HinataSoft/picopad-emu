@@ -3,8 +3,10 @@
 //               Host runtime - display (placeholder — replaced in Task 4)
 //
 // ****************************************************************************
-// Minimal link stub of the ST7789 driver: the frame buffer and the dirty
-// window are real, the transfer to the display is a no-op.
+// Replacement of the ST7789 driver. The SDK draws into FrameBuf and marks a
+// dirty window; DispUpdate hands the window to the platform layer
+// (plat_present) and models the SPI transfer time (24 MHz, 16 bits/px:
+// w*h*16/24 us, full screen 51200 us) unless fast_display is set.
 //
 // FrameBuf, the dirty-window variables and DispDirtyAll/None/Rect/Point,
 // DispAutoUpdate and DispUpdateAll are copied from _display/st7789/st7789.c:
@@ -82,10 +84,32 @@ void DispDirtyPoint(int x, int y)
 	}
 }
 
-// update - send dirty window to display (placeholder: nothing is sent)
+// update - send dirty window to display
 void DispUpdate()
 {
+	int x = DispDirtyX1;
+	int y = DispDirtyY1;
+	int w = DispDirtyX2 - x;
+	int h = DispDirtyY2 - y;
+
+	// the window is kept inside the frame buffer by DispDirtyRect/Point; a
+	// window set directly by a program is clamped here as well
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
+	if (x + w > WIDTH) w = WIDTH - x;
+	if (y + h > HEIGHT) h = HEIGHT - y;
+
+	if ((w > 0) && (h > 0))
+	{
+		plat_present(FrameBuf, x, y, w, h);
+
+		// SPI transfer time: 16 bits per pixel at 24 MHz
+		if (!host_cfg()->fast_display)
+			host_wait_us((unsigned long long)w * (unsigned long long)h * 16 / 24);
+	}
+
 	DispDirtyNone();
+	host_pump();
 }
 
 // auto update after delta time in [ms] of running program
@@ -122,5 +146,15 @@ void DispInit(u8 rot)
 }
 
 void DispTerm()
+{
+}
+
+// backlight is not emulated
+void DispBacklight(u8 backlight)
+{
+	(void)backlight;
+}
+
+void DispBacklightUpdate()
 {
 }

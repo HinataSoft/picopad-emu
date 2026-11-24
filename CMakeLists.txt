@@ -55,6 +55,7 @@ function(picopad_host_test name)
 endfunction()
 picopad_host_test(clock)
 picopad_host_test(rom)
+picopad_host_test(display)
 
 # Realna kontrola: zdrojaky hry TETRIS (beze zmen) se prelozi s host hlavickami
 set(_tetris "${PICOPAD_SDK_ABS}/PicoPad/GAME/TETRIS")
