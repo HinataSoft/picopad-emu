@@ -31,6 +31,15 @@
 // _sdk/inc/sdk_double.h (dremd); it is identical to remainder()
 #define drem remainder
 
+// attribute shorthands from newlib <sys/cdefs.h> (ARM toolchain), used by
+// _sdk/inc/sdk_pio.h (pio_program_t) and _sdk/inc/sdk_spi.h; MinGW has none
+#ifndef __packed
+#define __packed __attribute__((packed))
+#endif
+#ifndef __unused
+#define __unused __attribute__((unused))
+#endif
+
 // SDK base definitions and configuration (config.h of the game)
 #include "global.h"
 

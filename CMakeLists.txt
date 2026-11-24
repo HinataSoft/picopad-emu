@@ -37,3 +37,18 @@ add_test(NAME toolchain COMMAND test_toolchain)
 # Prenositelne knihovny PicoLibSDK prelozene pro host
 include(cmake/picopad.cmake)
 picopad_sdk_objects(sdk_objs_test tests/config)
+# C++ kontrola hlavicek SDK (vsechny hry jsou .cpp)
+target_sources(sdk_objs_test PRIVATE tests/config/cpp_check.cpp)
+
+# Realna kontrola: zdrojaky hry TETRIS (beze zmen) se prelozi s host hlavickami
+set(_tetris "${PICOPAD_SDK_ABS}/PicoPad/GAME/TETRIS")
+add_library(tetris_objs_check OBJECT
+    ${_tetris}/src/main.cpp
+    ${_tetris}/img/tiles.cpp
+    ${_tetris}/snd/brick.cpp
+    ${_tetris}/snd/gameover.cpp
+    ${_tetris}/snd/levelup.cpp
+    ${_tetris}/snd/line.cpp
+)
+picopad_sdk_compile_options(tetris_objs_check "${_tetris}")
+target_compile_definitions(tetris_objs_check PRIVATE main=game_main)
