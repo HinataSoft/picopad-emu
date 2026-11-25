@@ -134,3 +134,29 @@ add_test(NAME runtime_deps
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:test_clock>
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_deps_test.cmake)
 set_tests_properties(runtime_deps PROPERTIES TIMEOUT 60)
+
+# Zapis PNG a WAV: cisty C bez SDL a SDK
+add_library(platform_png STATIC platform/png.c)
+add_executable(test_png tests/test_png.c)
+target_include_directories(test_png PRIVATE tests)
+target_link_libraries(test_png PRIVATE platform_png)
+picopad_exe_runtime(test_png)
+add_test(NAME png COMMAND test_png)
+set_tests_properties(png PROPERTIES FIXTURES_SETUP png_files)
+
+add_library(platform_wav STATIC platform/wav.c)
+add_executable(test_wav tests/test_wav.c)
+target_include_directories(test_wav PRIVATE tests)
+target_link_libraries(test_wav PRIVATE platform_wav)
+picopad_exe_runtime(test_wav)
+add_test(NAME wav COMMAND test_wav)
+
+# Dekodovani PNG pres zlib (test png zapise soubory do build adresare)
+if(PICOPAD_PYTHON)
+    add_test(NAME png_decode
+             COMMAND ${CMAKE_COMMAND} -DPYTHON=${PICOPAD_PYTHON}
+                     -DDECODE=${CMAKE_CURRENT_SOURCE_DIR}/tests/png_decode.py
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/png_decode_test.cmake
+             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(png_decode PROPERTIES FIXTURES_REQUIRED png_files)
+endif()
