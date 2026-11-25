@@ -87,7 +87,7 @@ Ověří UF2 bloky a rodinu čipu, značky PPAD/ppad v hlavičce aplikace a jej�
 
 ## Známá omezení
 
-- Bez zvukového zařízení (SDL nenajde výstup, `audio_rate` 0) mixer neběží, takže `PlayingSound()` nikdy neskončí.
+- Bez zvukového zařízení (SDL nenajde výstup) mixer běží podle emulovaného času a vzorky zahazuje, takže `PlayingSound()` normálně skončí.
 - Herní smyčka, která čeká jen na `PlayingSound()` nebo jen čte paměť bez volání SDK (bez `Time()`, `WaitMs()`, `KeyGet()` apod.), se zasekne – emulátor nemá přerušení a SysTick, klávesy i zvuk obsluhuje jen při volání SDK. Týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET. Obojí je plánované na milník 2.
 - Nevkládat `<stdio.h>` spolu s `includes.h` SDK: `getchar` z `lib_print.h` koliduje s deklarací v `stdio.h`.
 

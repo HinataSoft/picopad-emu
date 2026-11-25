@@ -19,6 +19,8 @@ extern int fake_present_x, fake_present_y, fake_present_w, fake_present_h; /* la
 extern unsigned int fake_keys;                 /* returned by plat_key_bits() */
 extern char fake_log[256];                     /* last plat_log() message */
 extern int fake_log_count;                     /* number of plat_log() calls */
+extern short fake_audio[65536];                /* first 65536 samples passed to plat_audio_write */
+extern int fake_audio_count;                   /* all samples passed to plat_audio_write */
 
 #ifdef __cplusplus
 }

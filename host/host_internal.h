@@ -43,9 +43,10 @@ void host_pump_reset(void);
 
 // --- audio.c
 
-// game thread (from host_pump): run the stored PWM-wrap handler to top up the
-// audio ring buffer; does nothing without audio device or before PWM enable
+// game thread (from host_pump): produce the sound samples due by emulated
+// time (runs the stored PWM-wrap handler once per sample)
 void host_audio_pump(void);
+void host_audio_reset(void);		// restart the produced-sample counter (host_run_game)
 
 // --- runtime.c
 

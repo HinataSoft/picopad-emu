@@ -120,6 +120,12 @@ extern "C" unsigned int plat_key_bits(void)
 	return (unsigned int)SDL_AtomicGet(&KeyBits);
 }
 
+extern "C" void plat_audio_write(const short* s, int n)
+{
+	(void)s;
+	(void)n;   // PLAT_AUDIO_CAPTURE is not used by the interactive build
+}
+
 extern "C" void plat_log(const char* msg)
 {
 	if (LogMutex) SDL_LockMutex(LogMutex);
@@ -318,6 +324,7 @@ int main(int argc, char* argv[])
 	cfg.fast_display = opt.fast_display;
 	cfg.seed = opt.seed;
 	cfg.audio_rate = audio_open();   // CurrentFreq is set from it in RuntimeInit
+	cfg.audio_out = (AudioDev != 0) ? PLAT_AUDIO_RING : 0;
 	host_configure(&cfg);
 	if (AudioDev != 0) SDL_PauseAudioDevice(AudioDev, 0);
 

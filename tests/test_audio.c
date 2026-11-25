@@ -1,5 +1,6 @@
 /* PWM sound: the SDK mixer (PWMSndIrq, unchanged) runs on the game thread via
-   the pump into a ring buffer; host_audio_render only drains it. */
+   the pump, driven by emulated time; samples go to plat_audio_write (capture),
+   to a ring drained by host_audio_render, or are discarded. */
 #include "_sdk/inc/sdk_watchdog.h"
 #include "_sdk/inc/sdk_irq.h"
 #include "_lib/inc/lib_pwmsnd.h"
@@ -35,10 +36,47 @@ static void render_thread(void* arg)
     }
 }
 
+static int run_mode; /* 0 = capture, 1 = discard (audio_out 0), 2 = ring + render thread */
+
+#define DUE(t) ((int)((unsigned long long)(t) * 44100 / 1000000))
+
+/* audio_out = PLAT_AUDIO_CAPTURE, virtual time: production follows emulated time */
+static void audio_capture(void)
+{
+    int i, c0;
+    u64 t0;
+
+    for (i = 0; i < (int)sizeof(snd); i++) snd[i] = 0xC0;
+    t0 = Time64(); /* RuntimeInit/DeviceInit may already have advanced time */
+    CHECK_EQ(fake_audio_count, DUE(t0));
+    c0 = fake_audio_count;
+    PlaySound(snd, sizeof(snd)); /* 4410 B @22050 Hz = 0.2 s */
+    WaitMs(100);
+    CHECK_EQ(fake_audio_count, DUE(t0 + 100000));
+    CHECK(PlayingSound());
+    WaitMs(150);
+    CHECK(!PlayingSound()); /* no audio device needed */
+    CHECK_EQ(fake_audio_count, DUE(t0 + 250000));
+    CHECK(fake_audio[c0 + 100] > 0); /* 0xC0 samples (fake_audio keeps the first 65536) */
+}
+
+/* audio_out = 0: the mixer runs, samples are discarded */
+static void audio_discard(void)
+{
+    int i;
+    for (i = 0; i < (int)sizeof(snd); i++) snd[i] = 0xC0;
+    PlaySound(snd, sizeof(snd));
+    CHECK(PlayingSound());
+    WaitMs(250);
+    CHECK(!PlayingSound());
+    CHECK_EQ(fake_audio_count, 0);
+}
+
+/* audio_out = PLAT_AUDIO_RING, real time (fake_now) */
 static void audio_game(void)
 {
     short buf[512];
-    int i, n;
+    int i, n, seen;
     void* th;
 
     for (i = 0; i < (int)sizeof(snd); i++) snd[i] = 0xC0;
@@ -55,28 +93,19 @@ static void audio_game(void)
 
     PlaySound(snd, sizeof(snd));
     CHECK(PlayingSound());
-    WaitMs(10);
-    host_audio_render(buf, 512);
-    CHECK(buf[100] > 0); /* 0xC0 > 0x80 midpoint */
-    CHECK(buf[500] > 0);
-
-    /* 4410 samples @22050 Hz = 8820 frames @44100. The pump keeps 2048
-       frames ahead, so produced = rendered + 2048 (after the pump). */
-    for (n = 512; n + 512 <= 4096; n += 512) {
-        WaitMs(1);
+    /* the ring holds ~2048 frames of earlier silence: the sound follows */
+    seen = 0;
+    for (n = 0; n < 16; n++) {
+        WaitMs(10);
         host_audio_render(buf, 512);
+        if (buf[100] > 0 || buf[500] > 0) seen = 1;
     }
-    WaitMs(1);
-    CHECK_EQ(n, 4096);
-    CHECK(PlayingSound()); /* ~6144 produced, well before 8820 */
-    for (; n < 9216; n += 512) {
-        WaitMs(1);
-        host_audio_render(buf, 512);
-    }
-    WaitMs(1); /* >= 9216 + 2048 produced */
+    CHECK(seen); /* 0xC0 > 0x80 midpoint */
+    CHECK(PlayingSound()); /* 8820 frames = 200 ms, only ~160 ms elapsed */
+    for (n = 0; n < 2000 && PlayingSound(); n++) WaitMs(5);
     CHECK(!PlayingSound());
-    WaitMs(10);
-    host_audio_render(buf, 512);
+    WaitMs(100);
+    for (n = 0; n < 16; n++) host_audio_render(buf, 512);
     /* idle mixer sample is TOP/2 = 1023 -> -32, inaudible DC */
     for (i = 0; i < 512; i++) CHECK(buf[i] >= -32 && buf[i] <= 0);
 
@@ -98,20 +127,36 @@ static void audio_game(void)
     CHECK(render_count > 1);
     CHECK(handler_calls > 0);
     CHECK_EQ(off_thread_calls, 0);
-
-    ResetToBootLoader();
 }
 
 int host_call_game_main(void)
 {
-    audio_game();
+    if (run_mode == 0) audio_capture();
+    else if (run_mode == 1) audio_discard();
+    else audio_game();
+    ResetToBootLoader();
     return 0;
 }
 
 int main(void)
 {
-    host_config cfg = { .virtual_clock = 1, .fast_display = 1, .seed = 1, .audio_rate = 44100 };
+    host_config cfg = { .virtual_clock = 1, .fast_display = 1, .seed = 1, .audio_rate = 44100,
+                        .audio_out = PLAT_AUDIO_CAPTURE };
     host_configure(&cfg);
+    run_mode = 0;
+    fake_audio_count = 0;
+    CHECK_EQ(host_run_game(), 0);
+
+    cfg.audio_out = 0;
+    host_configure(&cfg);
+    run_mode = 1;
+    fake_audio_count = 0;
+    CHECK_EQ(host_run_game(), 0);
+
+    cfg.virtual_clock = 0;
+    cfg.audio_out = PLAT_AUDIO_RING;
+    host_configure(&cfg);
+    run_mode = 2;
     CHECK_EQ(host_run_game(), 0);
     return CHECK_DONE();
 }

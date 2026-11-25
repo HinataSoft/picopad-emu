@@ -86,6 +86,7 @@ int host_run_game(void)
 	host_set_game_thread(1);
 	host_clock_reset();
 	host_pump_reset();
+	host_audio_reset();
 
 	code = setjmp(GameJmp);
 	if (code == 0)

@@ -13,6 +13,8 @@ int fake_present_x = 0, fake_present_y = 0, fake_present_w = 0, fake_present_h =
 unsigned int fake_keys = 0;
 char fake_log[256];
 int fake_log_count = 0;
+short fake_audio[65536];
+int fake_audio_count = 0;
 
 unsigned long long plat_now_us(void) { return fake_now; }
 
@@ -41,4 +43,14 @@ void plat_log(const char* msg)
     fake_log_count++;
     snprintf(fake_log, sizeof(fake_log), "%s", msg);
     fprintf(stderr, "plat_log: %s\n", msg);
+}
+
+void plat_audio_write(const short* s, int n)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        if (fake_audio_count < (int)(sizeof(fake_audio) / sizeof(fake_audio[0])))
+            fake_audio[fake_audio_count] = s[i];
+        fake_audio_count++;
+    }
 }
