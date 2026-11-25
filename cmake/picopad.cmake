@@ -153,7 +153,8 @@ endfunction()
 #      and -Dmain=game_main (only these sources);
 #    - SDK + host layer = picopad_sdk_objects(<NAME>_sdk <GAME_DIR>) (the game's
 #      own config.h/include.h live in <GAME_DIR>);
-#    - host/game_entry.cpp and platform/ (SDL2 window, audio, CLI) in the exe;
+#    - host/game_entry.cpp and platform/ (SDL2 window, audio, CLI, headless
+#      mode with script, PNG and WAV) in the exe;
 #    - links SDL2main + SDL2 (+ winmm) via picopad_exe_runtime(): static MinGW
 #      runtime, SDL2.dll copied next to the exe.
 #   Writes nothing into <GAME_DIR> or the SDK.
@@ -190,10 +191,13 @@ function(picopad_add_game name game_dir)
         "${PICOPAD_PLATFORM_DIR}/main.cpp"
         "${PICOPAD_PLATFORM_DIR}/cli.c"
         "${PICOPAD_PLATFORM_DIR}/keymap.c"
+        "${PICOPAD_PLATFORM_DIR}/headless.c"
         $<TARGET_OBJECTS:${name}_game>
         $<TARGET_OBJECTS:${name}_sdk>
     )
     target_compile_definitions(${name} PRIVATE "PICOPAD_GAME_NAME=\"${name}\"")
-    target_link_libraries(${name} PRIVATE SDL2::SDL2main SDL2::SDL2 winmm)
+    # platform_script/png/wav: pure C libraries defined in CMakeLists.txt
+    target_link_libraries(${name} PRIVATE SDL2::SDL2main SDL2::SDL2 winmm
+        platform_script platform_png platform_wav)
     picopad_exe_runtime(${name} SDL2)
 endfunction()

@@ -20,6 +20,9 @@ static int run_mode;                /* 0 = stall + watchdog, 1 = idle advance (n
                                        2 = stall on the real clock, 3 = exit request from the watchdog */
 static volatile int stall_loop_done;
 static volatile int helper_stop;
+static volatile int release_game;    /* mode 3: lets the stalled loop end */
+static volatile int exit_returned;   /* mode 3: plat_tick returned the exit code */
+static unsigned int stalls_at_exit = 98, stalls_after = 99;
 static void* helper;
 static unsigned int idle_stalls = 99;
 static u32 dmb_delta, idle_t0;
@@ -32,12 +35,26 @@ static void watchdog_thread(void* arg)
     while (!stall_loop_done && !helper_stop && thr_ms() - start < 5000) {
         __atomic_add_fetch(&fake_now, 20000, __ATOMIC_SEQ_CST);
         host_watchdog();
+        if (run_mode == 3 && exit_returned) {
+            /* exit pending: further watchdog calls must not step the game */
+            int i;
+            stalls_at_exit = host_stall_count();
+            for (i = 0; i < 20; i++) {
+                __atomic_add_fetch(&fake_now, 20000, __ATOMIC_SEQ_CST);
+                host_watchdog();
+            }
+            stalls_after = host_stall_count();
+            release_game = 1;
+            break;
+        }
     }
 }
 
 static int exit_tick_fn(unsigned long long t)
 {
-    return (t == 100000ULL) ? 9 : -1;
+    if (t != 100000ULL) return -1;
+    exit_returned = 1;
+    return 9;
 }
 
 static void stall_game(void)
@@ -46,7 +63,7 @@ static void stall_game(void)
     for (i = 0; i < (int)sizeof(snd); i++) snd[i] = 0xC0;
     PlaySound(snd, sizeof(snd));                 /* 0.2 s */
     helper = thr_start(watchdog_thread, 0);
-    while (PlayingSound()) {}                    /* no SDK call that pumps */
+    while (PlayingSound() && !release_game) {}   /* no SDK call that pumps */
     stall_loop_done = 1;
 }
 
@@ -84,6 +101,8 @@ static void run_stall(int mode, int virtual_clock, int expect_code)
     run_mode = mode;
     stall_loop_done = 0;
     helper_stop = 0;
+    release_game = 0;
+    exit_returned = 0;
     helper = 0;
     fake_log[0] = 0;
     CHECK_EQ(host_run_game(), expect_code);
@@ -118,6 +137,9 @@ int main(void)
     fake_tick_fn = exit_tick_fn;
     run_stall(3, 1, 9);
     fake_tick_fn = 0;
+    CHECK(exit_returned);
+    CHECK(stalls_at_exit >= 1);
+    CHECK_EQ(stalls_after, stalls_at_exit);
 
     return CHECK_DONE();
 }

@@ -20,6 +20,10 @@
 // A game never returns by itself, so the process is terminated from the main
 // thread (TerminateProcess) while the game thread may still be running.
 //
+// --headless: main() hands over to headless_run (platform/headless.c: no
+// window, no audio device, no SDL_Init, virtual time, script and log) and the
+// plat_* functions below delegate to its headless_* versions.
+//
 // This TU includes SDL and windows.h, so it must not include SDK headers.
 
 #ifndef _WIN32_WINNT
@@ -35,6 +39,7 @@
 
 #include "../include/plat_api.h"
 #include "cli.h"
+#include "headless.h"
 #include "keymap.h"
 
 #ifndef PICOPAD_GAME_NAME
@@ -62,6 +67,9 @@ static int FrontDirty;
 static SDL_atomic_t KeyBits;               // effective (latched) key bits
 static SDL_atomic_t GameDone;              // 1 = host_run_game returned
 static SDL_atomic_t GameCode;              // its return code
+
+static int Headless;                       // 1 = --headless (plat_* delegate to headless.c)
+static int TraceKeys;                      // --trace-keys (interactive: keys lines on stderr)
 
 static SDL_mutex* LogMutex;
 static SDL_AudioDeviceID AudioDev;
@@ -105,6 +113,7 @@ extern "C" void plat_sleep_us(unsigned long long us)
 
 extern "C" void plat_present(const unsigned short* fb, int x, int y, int w, int h)
 {
+	if (Headless) { headless_present(fb, x, y, w, h); return; }
 	if (x < 0) { w += x; x = 0; }
 	if (y < 0) { h += y; y = 0; }
 	if (x + w > PLAT_W) w = PLAT_W - x;
@@ -120,19 +129,34 @@ extern "C" void plat_present(const unsigned short* fb, int x, int y, int w, int 
 
 extern "C" unsigned int plat_key_bits(void)
 {
+	if (Headless) return headless_key_bits();
 	return (unsigned int)SDL_AtomicGet(&KeyBits);
 }
 
 extern "C" void plat_audio_write(const short* s, int n)
 {
-	(void)s;
-	(void)n;   // PLAT_AUDIO_CAPTURE is not used by the interactive build
+	if (Headless) headless_audio_write(s, n);   // PLAT_AUDIO_CAPTURE only in headless
 }
+
+static void plat_logf(const char* fmt, ...);
 
 extern "C" int plat_tick(unsigned long long t_us)
 {
-	(void)t_us;
-	return -1;   // interactive build: the window/Ctrl+C end the game
+	if (Headless) return headless_tick(t_us);
+	// interactive: the window/Ctrl+C/--max-time end the game; --trace-keys
+	// prints the key bits seen by this tick when they change (game thread,
+	// or the watchdog thread under the pump lock: never concurrently)
+	if (TraceKeys)
+	{
+		static unsigned int traced = 0;
+		unsigned int bits = (unsigned int)SDL_AtomicGet(&KeyBits);
+		if (bits != traced)
+		{
+			traced = bits;
+			plat_logf("keys t=%llu bits=0x%02x", t_us / 1000, bits);
+		}
+	}
+	return -1;
 }
 
 extern "C" void plat_log(const char* msg)
@@ -301,7 +325,20 @@ int main(int argc, char* argv[])
 		return 2;
 	}
 	Keys = opt.keys;
+	TraceKeys = opt.trace_keys;
+	LogMutex = SDL_CreateMutex();   // SDL mutexes work without SDL_Init
 
+	if (opt.headless)
+	{
+		Headless = 1;
+		int code = headless_run(&opt, PICOPAD_GAME_NAME);
+		fflush(stdout);
+		fflush(stderr);
+		return code;
+	}
+
+	fprintf(stderr, "seed=%u\n", opt.seed);   // reproduce a run with --seed
+	fflush(stderr);
 	timeBeginPeriod(1);
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0)
@@ -309,7 +346,6 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "%s: SDL init failed: %s\n", PICOPAD_GAME_NAME, SDL_GetError());
 		return 1;
 	}
-	LogMutex = SDL_CreateMutex();
 	FrontMutex = SDL_CreateMutex();
 	GameDoneEvent = SDL_RegisterEvents(1);
 	SetConsoleCtrlHandler(console_handler, TRUE);

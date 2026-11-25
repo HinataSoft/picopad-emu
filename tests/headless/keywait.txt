@@ -1,0 +1,5 @@
+# KEYWAIT: snapshot, press A, then events after the game has ended
+200 shot before
+300 hold A 100
+1000 shot after
+2000 quit

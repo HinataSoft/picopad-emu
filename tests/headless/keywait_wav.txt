@@ -1,0 +1,2 @@
+# KEYWAIT with WAV capture: the game ends shortly after A
+300 hold A 100

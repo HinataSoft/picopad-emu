@@ -1,0 +1,3 @@
+# HELLO: title screen snapshot
+200 shot title
+300 quit

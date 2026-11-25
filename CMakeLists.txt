@@ -169,3 +169,67 @@ target_include_directories(test_script PRIVATE tests)
 target_link_libraries(test_script PRIVATE platform_script)
 picopad_exe_runtime(test_script)
 add_test(NAME script COMMAND test_script)
+
+# Testovaci hry pro headless rezim (jen pro emulator)
+picopad_add_game(KEYWAIT ${CMAKE_SOURCE_DIR}/tests/games/KEYWAIT)
+picopad_add_game(STALL ${CMAKE_SOURCE_DIR}/tests/games/STALL)
+
+# picopad_headless_test(<name> <game target> <exit code> [ARGS ...] [STDOUT ...]
+#     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f])
+# runs tests/headless_test.cmake in its own directory build/headless/<name>
+set(PICOPAD_HL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/headless")
+function(picopad_headless_test name game expect)
+    cmake_parse_arguments(HT "" "MAKE_FILE;WAV" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
+    set(_work "${CMAKE_CURRENT_BINARY_DIR}/headless/${name}")
+    add_test(NAME ${name}
+             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${game}> -DEXPECT=${expect}
+                     -DWORK_DIR=${_work}
+                     "-DARGS=${HT_ARGS}"
+                     "-DSTDOUT_MATCH=${HT_STDOUT}"
+                     "-DSTDERR_MATCH=${HT_STDERR}"
+                     "-DFILES_EXIST=${HT_EXIST}"
+                     "-DFILES_ABSENT=${HT_ABSENT}"
+                     "-DCOMPARE=${HT_COMPARE}"
+                     "-DMAKE_FILE=${HT_MAKE_FILE}"
+                     "-DWAV=${HT_WAV}"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/headless_test.cmake)
+    set_tests_properties(${name} PROPERTIES TIMEOUT 40)
+endfunction()
+
+# hra skonci sama kratce po stisku A: "shot after" a "quit" zustanou nezpracovane
+picopad_headless_test(keywait_script KEYWAIT 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/keywait.txt
+    STDOUT "^start game=KEYWAIT seed=0 rate=44100$"
+           "^shot t=200 file=\./before\.png$"
+           "^end reason=exit t=[0-9]+ code=0 stalls=0 pending=2$"
+    EXIST before.png
+    ABSENT after.png)
+picopad_headless_test(keywait_noscript KEYWAIT 3
+    ARGS --headless --max-time 3s
+    STDOUT "^end reason=max-time t=3000 code=3 stalls=0 pending=0$")
+picopad_headless_test(stall_headless STALL 0
+    ARGS --headless
+    STDOUT "^end reason=exit t=[0-9]+ code=0 stalls=[1-9][0-9]* pending=0$")
+picopad_headless_test(hello_headless HELLO 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/hello.txt
+    STDOUT "^start game=HELLO seed=0 rate=44100$"
+           "^shot t=200 file=\./title\.png$"
+           "^end reason=quit t=300 code=0 stalls=0 pending=0$"
+    COMPARE title.png ${CMAKE_CURRENT_SOURCE_DIR}/tests/ref/hello_title.png)
+picopad_headless_test(shot_dir_nested HELLO 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/hello.txt
+         --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/headless/shot_dir_nested/shots/a/b
+    STDOUT "^shot t=200 file=.*/shots/a/b/title\.png$"
+    EXIST shots/a/b/title.png)
+picopad_headless_test(shot_dir_bad HELLO 1
+    ARGS --headless --script ${PICOPAD_HL_DIR}/hello.txt --shot-dir notadir
+    MAKE_FILE notadir
+    STDOUT "^end reason=fatal t=200 code=1 "
+    STDERR "notadir")
+picopad_headless_test(script_error HELLO 2
+    ARGS --headless --script ${PICOPAD_HL_DIR}/bad.txt
+    STDERR "line 2")
+picopad_headless_test(wav_headless KEYWAIT 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/keywait_wav.txt --wav out.wav
+    STDOUT "^end reason=exit t=[0-9]+ code=0 "
+    WAV out.wav)

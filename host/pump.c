@@ -36,7 +36,8 @@
 //    runs one pump step itself: virtual clock - advance to the next tick, run
 //    it and the mixer; real clock - run the ticks due by real time and the
 //    mixer. plat_tick >= 0 there becomes host_request_exit (no longjmp off the
-//    game thread). Its own step does not count in PumpSeq; the episode lasts
+//    game thread); once an exit is pending the watchdog does nothing more.
+//    Its own step does not count in PumpSeq; the episode lasts
 //    until PumpSeq moves again, with one step per call; the first step of an
 //    episode is logged ("stall: ..."). The watchdog acts only while a game is
 //    inside host_run_game (host_pump_activate).
@@ -317,6 +318,9 @@ void host_watchdog(void)
 	int expect = 0, logit = 0;
 
 	if (!__atomic_load_n(&GameActive, __ATOMIC_SEQ_CST)) return;
+	// an exit is pending: no further steps (the game ends at its next pump,
+	// or the platform ends a game that never pumps again)
+	if (__atomic_load_n(&PendingExit, __ATOMIC_SEQ_CST) >= 0) return;
 	if (!__atomic_compare_exchange_n(&WdBusy, &expect, 1, 0,
 			__ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
 

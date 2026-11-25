@@ -51,7 +51,11 @@ Volby (lze psát i jako `--volba=hodnota`):
 - `--fast-display` – vypne model přenosu na displej (SPI 24 MHz)
 - `--seed N` – semínko náhodných čísel (výchozí z času)
 - `--max-time T` – po čase T skončí s kódem 3; T = `2000`, `2000ms` nebo `2s`
+- `--trace-keys` – při každé změně stavu kláves vypíše na stderr `keys t=<ms> bits=0x<hex>`
+- `--headless`, `--script`, `--shot-dir`, `--wav` – běh bez okna, viz [Headless režim](#headless-režim)
 - `--help` – nápověda
+
+Při startu vypíše na stderr `seed=<n>`; stejný běh jde zopakovat s `--seed <n>`.
 
 Klávesy:
 
@@ -66,6 +70,53 @@ Klávesy:
 Mapování `letters` se řídí popiskem klávesy podle aktivního rozložení klávesnice (na české QWERTZ funguje klávesa s popiskem Y). V rozložení `layout` se klávesy berou podle fyzické polohy (pozice A S / Z X na americké klávesnici, na QWERTZ tedy A S / Y X) a tvoří čtverec, který kopíruje fyzické rozmístění tlačítek X Y / A B na Picopadu.
 
 Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty; 3 = vypršel `--max-time`.
+
+## Headless režim
+
+S `--headless` běží každé herní exe bez okna a bez zvukového zařízení ve virtuálním čase: emulovaný čas neběží podle hodin PC, ale podle toho, kolik ho hra „spotřebuje“ (`WaitMs`, přenos na displej, čekání na `Time()`), takže běh je mnohonásobně rychlejší než reálný a se stejným skriptem a semínkem bajtově opakovatelný. Slouží pro automatické testy her.
+
+```
+build\HELLO.exe --headless --script tests\headless\hello.txt --shot-dir shots
+```
+
+Volby:
+
+- `--headless` – běh bez okna; výchozí semínko 0 a `--max-time 60s` (emulovaného času)
+- `--script FILE` – vstupní skript (klávesy, snímky, konec)
+- `--shot-dir DIR` – adresář pro snímky `<DIR>/<jméno>.png` (výchozí `.`), vytvoří se včetně rodičů při prvním snímku
+- `--wav FILE` – zapíše zvuk hry do WAV (PCM, mono, 16 bit, 44100 Hz); jen s `--headless`
+- `--trace-keys` – do logu přidá řádek `keys` při každé změně kláves
+- `--seed N`, `--max-time T`, `--fast-display` – jako v interaktivním režimu (`--fast-display` vypne model přenosu na displej, jinak trvá celá obrazovka 51,2 ms)
+
+Skript je textový soubor, jeden příkaz na řádek, `#` začíná komentář. Čas je v ms emulovaného času od startu, události se provádějí na SysTicku (po 5 ms) v pořadí času a pak pořadí v souboru:
+
+```
+# čas  příkaz
+200  shot title        # snímek displeje do title.png (jméno: písmena, číslice, _ a -)
+300  press A           # stisk klávesy (UP DOWN LEFT RIGHT A B X Y)
+400  release A         # uvolnění
+500  hold B 100        # stisk na 100 ms (= press v 500, release v 600)
+1000 quit              # konec, kód 0
+```
+
+Uvolnění klávesy stisknuté ve stejném ticku se odloží o jeden tick (aby hra stisk vůbec viděla), a s ním i další události téhož ticku.
+
+Log jde na stdout, jeden řádek = jedna událost (`t` = emulovaný čas v ms); hlášky hry a `stall` jdou na stderr:
+
+```
+start game=HELLO seed=0 rate=44100
+shot t=200 file=shots/title.png
+keys t=300 bits=0x40
+end reason=quit t=1000 code=0 stalls=0 pending=0
+```
+
+- `keys` jen s `--trace-keys`; `bits` = bit i odpovídá klávese i+1 (UP=0x01, LEFT=0x02, RIGHT=0x04, DOWN=0x08, X=0x10, Y=0x20, A=0x40, B=0x80)
+- `end reason=`: `quit` (příkaz `quit`), `exit` (hra skončila sama přes `ResetToBootLoader` nebo návratem z `main`), `fatal` (`panic`, chyba zápisu PNG/WAV, `--shot-dir` není adresář), `max-time` (vypršel `--max-time`)
+- `stalls` = počet zásahů hlídače (viz níže), `pending` = počet nezpracovaných událostí skriptu (např. hra skončila dřív)
+
+Návratové kódy: 0 = `quit` nebo hra skončila sama; 1 = fatální chyba; 2 = chybné argumenty nebo chyba ve skriptu (hláška s číslem řádku na stderr); 3 = vypršel `--max-time`.
+
+Omezení determinismu: smyčka hry bez volání SDK (např. `while (PlayingSound()) {}`) neposouvá emulovaný čas; takovou smyčku po 100 ms reálného času odblokuje hlídač (`host_watchdog`), který posouvá čas po jednom ticku z vlastního vlákna. Od prvního zásahu (`stall:` na stderr, `stalls=N` > 0 v řádku `end`) je běh jen „best effort“ – kolik se toho ve smyčce stihne, závisí na rychlosti PC. Běh s `stalls=0` je plně deterministický. Když konec (`quit`, `max-time`) nastane během zásahu hlídače a hra smyčku do 1 s reálného času neopustí, emulátor vypíše řádek `end` a proces ukončí sám s týmž kódem.
 
 ## Hra mimo strom SDK (HELLO) a build pro zařízení
 
@@ -87,8 +138,7 @@ Ověří UF2 bloky a rodinu čipu, značky PPAD/ppad v hlavičce aplikace a jej�
 
 ## Známá omezení
 
-- Bez zvukového zařízení (SDL nenajde výstup) mixer běží podle emulovaného času a vzorky zahazuje, takže `PlayingSound()` normálně skončí.
-- Herní smyčka, která čeká jen na `PlayingSound()` nebo jen čte paměť bez volání SDK (bez `Time()`, `WaitMs()`, `KeyGet()` apod.), se zasekne – emulátor nemá přerušení a SysTick, klávesy i zvuk obsluhuje jen při volání SDK. Týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET. Obojí je plánované na milník 2.
+- Herní smyčka bez volání SDK (čeká jen na `PlayingSound()` nebo jen čte paměť) se nezasekne: emulátor nemá přerušení, takže ji po 100 ms odblokuje hlídač a dál obsluhuje SysTick, klávesy a zvuk z vlastního vlákna (po 20 ms; v headless režimu po jednom ticku, tj. 4× pomaleji než reálný čas) (týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET).
 - Nevkládat `<stdio.h>` spolu s `includes.h` SDK: `getchar` z `lib_print.h` koliduje s deklarací v `stdio.h`.
 
 ## Ověřeno
