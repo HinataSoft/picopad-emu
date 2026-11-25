@@ -15,6 +15,9 @@
    same holds for an exit requested by the host without plat_tick (a fatal
    error inside a watchdog step, host_pending_exit): end reason=fatal.
 
+   The 1 ms system timer resolution (timeBeginPeriod) keeps the WATCHDOG_MS
+   period close to 20 ms, as in the interactive mode.
+
    Determinism: virtual time only; real time is used solely by the watchdog
    (stalls=N > 0 in the end line marks a best-effort run) and the hang kill.
 
@@ -23,6 +26,7 @@
 #define _WIN32_WINNT 0x0A00
 #endif
 #include <windows.h>
+#include <mmsystem.h>
 #include <SDL.h>
 
 #include <stdarg.h>
@@ -284,10 +288,12 @@ int headless_run(const cli_options* opt, const char* game_name)
     cfg.audio_out = opt->wav ? PLAT_AUDIO_CAPTURE : 0;
     host_configure(&cfg);
 
+    timeBeginPeriod(1);   /* released by timeEndPeriod below, or by the OS on TerminateProcess */
     thread = SDL_CreateThreadWithStackSize(game_thread, "game", GAME_STACK_SIZE, NULL);
     if (thread == NULL)
     {
         fprintf(stderr, "%s: cannot create game thread: %s\n", game_name, SDL_GetError());
+        timeEndPeriod(1);
         return finish("fatal", 0, 1);
     }
 
@@ -317,6 +323,7 @@ int headless_run(const cli_options* opt, const char* game_name)
         SDL_Delay(WATCHDOG_MS);
     }
     SDL_WaitThread(thread, NULL);
+    timeEndPeriod(1);
 
     code = SDL_AtomicGet(&GameCode);
     if (SDL_AtomicGet(&EndSet) && code == EndCode)
