@@ -175,9 +175,11 @@ endfunction()
 
 # hra skonci sama kratce po stisku A: "shot after" a "quit" zustanou nezpracovane
 picopad_headless_test(keywait_script KEYWAIT 0
-    ARGS --headless --script ${PICOPAD_HL_DIR}/keywait.txt
+    ARGS --headless --trace-keys --script ${PICOPAD_HL_DIR}/keywait.txt
     STDOUT "^start game=KEYWAIT seed=0 rate=44100$"
            "^shot t=200 file=\./before\.png$"
+           "^keys t=300 bits=0x40$"
+           "^keys t=400 bits=0x00$"
            "^end reason=exit t=[0-9]+ code=0 stalls=0 pending=2$"
     EXIST before.png
     ABSENT after.png)
