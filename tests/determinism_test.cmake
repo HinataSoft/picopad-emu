@@ -25,7 +25,7 @@ function(run_game dir seed)
                     RESULT_VARIABLE _rc
                     OUTPUT_VARIABLE _out
                     ERROR_VARIABLE _err
-                    TIMEOUT 60)
+                    TIMEOUT 35)
     message(STATUS "run ${dir} (seed ${seed}): exit code ${_rc}\n${_out}")
     set(_msg "")
     if(NOT "${_rc}" STREQUAL "0")
