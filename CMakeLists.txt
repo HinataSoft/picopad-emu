@@ -63,6 +63,9 @@ picopad_host_test(tick)
 # audio test uses a helper thread (windows.h kept out of the SDK-including TU)
 target_sources(test_audio PRIVATE tests/thread_helper.c)
 set_tests_properties(audio PROPERTIES TIMEOUT 30)
+# tick test uses a helper thread for host_request_exit
+target_sources(test_tick PRIVATE tests/thread_helper.c)
+set_tests_properties(tick PROPERTIES TIMEOUT 30)
 
 # Mapovani klaves a tap latch: cista C knihovna bez SDL a SDK
 add_library(platform_keymap STATIC platform/keymap.c)

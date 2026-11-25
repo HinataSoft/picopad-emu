@@ -41,13 +41,12 @@ void host_set_game_thread(int on);
 // calling thread (start of host_run_game and after longjmp out of the game)
 void host_pump_reset(void);
 
-// forget an exit code left pending by another thread (start of host_run_game)
+// ask the game to end with exit code 'code' (>= 0); callable from any thread
+// (watchdog); the next host_pump on the game thread calls host_exit(code)
+void host_request_exit(int code);
+
+// forget a pending exit request (start of host_run_game)
 void host_pump_clear_exit(void);
-
-// --- runtime.c (exit)
-
-// leave host_run_game with the given exit code (game thread only)
-void host_exit(int code) __attribute__((noreturn));
 
 // --- audio.c
 
@@ -57,6 +56,9 @@ void host_audio_pump(void);
 void host_audio_reset(void);		// restart the produced-sample counter (host_run_game)
 
 // --- runtime.c
+
+// leave host_run_game with the given exit code (game thread only)
+void host_exit(int code) __attribute__((noreturn));
 
 // game entry: C++ shim host/game_entry.cpp in game builds, defined by C tests
 int host_call_game_main(void);
