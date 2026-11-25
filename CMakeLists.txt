@@ -66,6 +66,10 @@ set_tests_properties(audio PROPERTIES TIMEOUT 30)
 # tick test uses a helper thread for host_request_exit
 target_sources(test_tick PRIVATE tests/thread_helper.c)
 set_tests_properties(tick PROPERTIES TIMEOUT 30)
+# stall test calls host_watchdog from a helper thread
+picopad_host_test(stall)
+target_sources(test_stall PRIVATE tests/thread_helper.c)
+set_tests_properties(stall PROPERTIES TIMEOUT 30)
 
 # Mapovani klaves a tap latch: cista C knihovna bez SDL a SDK
 add_library(platform_keymap STATIC platform/keymap.c)

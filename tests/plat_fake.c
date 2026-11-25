@@ -4,7 +4,7 @@
 
 #include "plat_fake.h"
 
-unsigned long long fake_now = 0;
+volatile unsigned long long fake_now = 0; /* shared with test helper threads: atomic access */
 unsigned long long fake_sleep_min_us = 0;
 int fake_sleep_count = 0;
 unsigned short fake_fb[PLAT_H][PLAT_W];
@@ -19,12 +19,12 @@ unsigned long long fake_tick_times[64];
 int fake_tick_count = 0;
 int (*fake_tick_fn)(unsigned long long t_us) = NULL;
 
-unsigned long long plat_now_us(void) { return fake_now; }
+unsigned long long plat_now_us(void) { return __atomic_load_n(&fake_now, __ATOMIC_SEQ_CST); }
 
 void plat_sleep_us(unsigned long long us)
 {
     fake_sleep_count++;
-    fake_now += (us < fake_sleep_min_us) ? fake_sleep_min_us : us;
+    __atomic_add_fetch(&fake_now, (us < fake_sleep_min_us) ? fake_sleep_min_us : us, __ATOMIC_SEQ_CST);
 }
 
 void plat_present(const unsigned short* fb, int x, int y, int w, int h)

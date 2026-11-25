@@ -21,6 +21,47 @@
 // to serialize against IRQ_LOCK sections (the audio thread does not: it only
 // drains a ring buffer, see audio.c). The nesting depth is per thread; an
 // unmatched unlock (ei() without di()) is ignored.
+//
+// Stall protection:
+//  - virtual clock: PUMP_IDLE_CALLS top-level pumps without any change of
+//    host_now_us() (a loop polling Time() or calling dmb()) advance the
+//    virtual clock to the next SysTick (host_clock_advance_to_next_tick), so
+//    such loops end; deterministic. A wait (host_wait_us) restarts the count;
+//  - watchdog: host_watchdog() is called by the platform from its own thread
+//    every ~20 ms. A game loop without any SDK call (while (PlayingSound()) {})
+//    never pumps, so SysTick and the mixer would stop forever. Every game-thread
+//    pump increments PumpSeq (no real-time read on the game thread); when the
+//    watchdog sees PumpSeq unchanged for STALL_US of real time, it takes the
+//    pump lock and the IRQ mutex without waiting (busy = skip this call) and
+//    runs one pump step itself: virtual clock - advance to the next tick, run
+//    it and the mixer; real clock - run the ticks due by real time and the
+//    mixer. plat_tick >= 0 there becomes host_request_exit (no longjmp off the
+//    game thread). Its own step does not count in PumpSeq; the episode lasts
+//    until PumpSeq moves again, with one step per call; the first step of an
+//    episode is logged ("stall: ..."). The watchdog acts only while a game is
+//    inside host_run_game (host_pump_activate).
+//
+// Pump lock (InPump, CAS): PUMP_FREE / PUMP_GAME / PUMP_WATCHDOG. The game
+// thread waits for a watchdog step to finish (it is short and never waits for
+// the game), so no game pump is ever skipped (determinism); a nested
+// game-thread pump (InPump == PUMP_GAME) returns at once. The watchdog only
+// tries. Only the game thread sets PUMP_GAME and only the watchdog sets
+// PUMP_WATCHDOG; each owner releases its own value.
+//
+// Thread ownership of the shared state:
+//  - GameThread, IrqDepth, IrqTag: per thread (__thread);
+//  - IrqOwner: any thread, CAS;
+//  - InPump: CAS / atomic store (see above);
+//  - LastTick: under the pump lock (game thread or watchdog), and in
+//    host_pump_reset on the game thread while the watchdog is inactive;
+//  - SpinStart, SpinCalls, IdleNow, IdleCalls: game thread only;
+//  - PumpSeq, RunId: written by the game thread only, read by the watchdog
+//    (atomic); GameActive: written by the game thread, read by the watchdog;
+//  - StallCount: incremented by the watchdog under the pump lock, reset by
+//    the game thread at run start, read by anyone (atomic);
+//  - WdBusy (CAS) guards the watchdog's own state (WdRun, WdSeq, WdTime,
+//    WdEpisode), so overlapping host_watchdog calls are harmless (the later
+//    one returns).
 
 #include "host_internal.h"
 #include "_sdk/inc/sdk_systick.h"		// SysTime, UnixTime, CurTimeMs, SYSTICK_MS
@@ -31,6 +72,12 @@
 #define PUMP_SPIN_CALLS		1000			// pumps without 1 ms elapsed = busy wait
 #define PUMP_SPIN_WINDOW_US	1000ULL
 #define PUMP_SPIN_SLEEP_US	200ULL
+#define PUMP_IDLE_CALLS		1000			// virtual clock: pumps without time progress -> next tick
+#define STALL_US		100000ULL		// watchdog: real time without a pump = stall
+
+#define PUMP_FREE		0			// InPump values
+#define PUMP_GAME		1
+#define PUMP_WATCHDOG		2
 
 // system time (originally sdk_systick.c)
 volatile u32 SysTime;		// [ms], incremented every SYSTICK_MS
@@ -43,10 +90,23 @@ static __thread char IrqTag;		// address = identity of this thread
 static void* volatile IrqOwner;		// thread holding the IRQ mutex, NULL = free
 
 static volatile int PendingExit = -1;	// exit code requested by host_request_exit, <0 = none
-static int InPump;			// reentrancy flag (game thread only)
-static unsigned long long LastTick;	// emulated time of the last SysTick [us]
-static unsigned long long SpinStart;	// start of the spin window [us]
-static int SpinCalls;			// pumps in the current spin window
+static int InPump;			// pump lock PUMP_FREE/GAME/WATCHDOG (atomic)
+static unsigned long long LastTick;	// emulated time of the last SysTick [us] (pump lock)
+static unsigned long long SpinStart;	// start of the spin window [us] (game thread)
+static int SpinCalls;			// pumps in the current spin window (game thread)
+static unsigned long long IdleNow;	// host_now_us() when IdleCalls restarted (game thread)
+static int IdleCalls;			// pumps since then without time progress (game thread)
+
+static unsigned int PumpSeq;		// game-thread pump counter (atomic, game thread writes)
+static unsigned int RunId;		// host_run_game counter (atomic, game thread writes)
+static int GameActive;			// 1 = a game is inside host_run_game (atomic)
+static unsigned int StallCount;		// watchdog steps since the run start (atomic)
+
+static int WdBusy;			// host_watchdog in progress (CAS), guards Wd*
+static unsigned int WdRun;		// RunId seen by the watchdog
+static unsigned int WdSeq;		// PumpSeq seen by the watchdog
+static unsigned long long WdTime;	// plat_now_us() when WdSeq/WdRun last changed
+static int WdEpisode;			// 1 = inside a stall episode (already stepped)
 
 int host_is_game_thread(void)
 {
@@ -79,6 +139,21 @@ void host_irq_unlock(void)
 	if (--IrqDepth == 0) __atomic_store_n(&IrqOwner, NULL, __ATOMIC_RELEASE);
 }
 
+// lock the IRQ mutex without waiting; 1 = locked (unlock with host_irq_unlock)
+static int irq_trylock(void)
+{
+	void* expect = NULL;
+	if (IrqDepth > 0)
+	{
+		IrqDepth++;
+		return 1;
+	}
+	if (!__atomic_compare_exchange_n(&IrqOwner, &expect, (void*)&IrqTag, 0,
+			__ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return 0;
+	IrqDepth = 1;
+	return 1;
+}
+
 void host_request_exit(int code)
 {
 	__atomic_store_n(&PendingExit, code, __ATOMIC_SEQ_CST);
@@ -89,12 +164,44 @@ void host_pump_clear_exit(void)
 	__atomic_store_n(&PendingExit, -1, __ATOMIC_SEQ_CST);
 }
 
+void host_pump_idle_reset(void)
+{
+	IdleCalls = 0;
+}
+
+void host_pump_activate(int on)
+{
+	if (on)
+	{
+		__atomic_store_n(&StallCount, 0, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&RunId, RunId + 1, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&GameActive, 1, __ATOMIC_SEQ_CST);
+		return;
+	}
+	// the watchdog re-checks GameActive after taking the pump lock (all
+	// seq_cst): either it sees 0 and backs off, or we see its lock and wait
+	__atomic_store_n(&GameActive, 0, __ATOMIC_SEQ_CST);
+	while (__atomic_load_n(&InPump, __ATOMIC_SEQ_CST) == PUMP_WATCHDOG)
+		__builtin_ia32_pause();
+}
+
+unsigned int host_stall_count(void)
+{
+	return __atomic_load_n(&StallCount, __ATOMIC_SEQ_CST);
+}
+
 void host_pump_reset(void)
 {
-	InPump = 0;
+	// release the pump lock only if this (game) thread holds it (longjmp out
+	// of host_pump); never clobber a watchdog that is backing off
+	int expect = PUMP_GAME;
+	__atomic_compare_exchange_n(&InPump, &expect, PUMP_FREE, 0,
+		__ATOMIC_RELEASE, __ATOMIC_RELAXED);
 	LastTick = host_now_us();
 	SpinStart = LastTick;
 	SpinCalls = 0;
+	IdleNow = LastTick;
+	IdleCalls = 0;
 	if (IrqDepth > 0)
 	{
 		IrqDepth = 0;
@@ -129,28 +236,68 @@ static void SysTickHandler(void)
 #endif
 }
 
-void host_pump(void)
+// pump body, under the pump lock (game thread or watchdog): the SysTicks due
+// by 'now', plat_tick before each, then the mixer. Returns the exit code of
+// plat_tick (>= 0; the remaining ticks and the mixer are skipped) or -1.
+static int pump_step(unsigned long long now)
 {
-	if (GameThread && !InPump && IrqDepth == 0)
-	{
-		int pending = __atomic_load_n(&PendingExit, __ATOMIC_SEQ_CST);
-		if (pending >= 0) host_exit(pending);	// requested by host_request_exit
-	}
-	if (!GameThread || InPump || IrqDepth > 0) return;
-	InPump = 1;
-
-	unsigned long long now = host_now_us();
-	while (now - LastTick >= PUMP_TICK_US)
+	while (now >= LastTick + PUMP_TICK_US)
 	{
 		LastTick += PUMP_TICK_US;
 		int rc = plat_tick(LastTick);
-		if (rc >= 0) host_exit(rc);
+		if (rc >= 0) return rc;
 		SysTickHandler();
 	}
-
 	host_audio_pump();
+	return -1;
+}
 
-	if (!host_cfg()->virtual_clock)
+void host_pump(void)
+{
+	if (!GameThread) return;
+	// only this thread writes PumpSeq: plain increment, published atomically
+	__atomic_store_n(&PumpSeq, PumpSeq + 1, __ATOMIC_RELAXED);
+	if (IrqDepth > 0) return;
+	if (__atomic_load_n(&InPump, __ATOMIC_RELAXED) == PUMP_GAME) return;	// nested
+
+	int pending = __atomic_load_n(&PendingExit, __ATOMIC_SEQ_CST);
+	if (pending >= 0) host_exit(pending);	// requested by host_request_exit
+
+	// take the pump lock; besides us only a (short) watchdog step holds it
+	int expect = PUMP_FREE;
+	while (!__atomic_compare_exchange_n(&InPump, &expect, PUMP_GAME, 0,
+			__ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+	{
+		expect = PUMP_FREE;
+		__builtin_ia32_pause();
+	}
+
+	const int virt = host_cfg()->virtual_clock;
+	unsigned long long now = host_now_us();
+	if (virt)
+	{
+		// polling without waiting: after PUMP_IDLE_CALLS pumps without time
+		// progress, step to the next tick (deterministic)
+		if (now != IdleNow)
+		{
+			IdleNow = now;
+			IdleCalls = 0;
+		}
+		else if (++IdleCalls >= PUMP_IDLE_CALLS)
+		{
+			host_clock_advance_to_next_tick(LastTick + PUMP_TICK_US);
+			now = host_now_us();
+			IdleNow = now;
+			IdleCalls = 0;
+		}
+	}
+
+	int rc = pump_step(now);
+	if (rc >= 0) host_exit(rc);	// the lock is released by host_pump_reset
+
+	__atomic_store_n(&InPump, PUMP_FREE, __ATOMIC_RELEASE);
+
+	if (!virt)
 	{
 		if (now - SpinStart >= PUMP_SPIN_WINDOW_US)
 		{
@@ -163,6 +310,54 @@ void host_pump(void)
 			SpinCalls = 0;
 		}
 	}
+}
 
-	InPump = 0;
+void host_watchdog(void)
+{
+	int expect = 0, logit = 0;
+
+	if (!__atomic_load_n(&GameActive, __ATOMIC_SEQ_CST)) return;
+	if (!__atomic_compare_exchange_n(&WdBusy, &expect, 1, 0,
+			__ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) return;
+
+	unsigned int run = __atomic_load_n(&RunId, __ATOMIC_SEQ_CST);
+	unsigned int seq = __atomic_load_n(&PumpSeq, __ATOMIC_SEQ_CST);
+	unsigned long long now = plat_now_us();
+
+	if (run != WdRun || seq != WdSeq)
+	{
+		// new run, or the game pumped since the last look: no stall, episode over
+		WdRun = run;
+		WdSeq = seq;
+		WdTime = now;
+		WdEpisode = 0;
+	}
+	else if (WdEpisode || now - WdTime >= STALL_US)
+	{
+		expect = PUMP_FREE;
+		if (__atomic_compare_exchange_n(&InPump, &expect, PUMP_WATCHDOG, 0,
+				__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+		{
+			// still the same run, the game still stalled, and the game
+			// thread not inside IRQ_LOCK (else skip this call)
+			if (__atomic_load_n(&GameActive, __ATOMIC_SEQ_CST) &&
+				__atomic_load_n(&RunId, __ATOMIC_SEQ_CST) == run &&
+				__atomic_load_n(&PumpSeq, __ATOMIC_SEQ_CST) == seq &&
+				irq_trylock())
+			{
+				if (host_cfg()->virtual_clock)
+					host_clock_advance_to_next_tick(LastTick + PUMP_TICK_US);
+				int rc = pump_step(host_now_us());
+				if (rc >= 0) host_request_exit(rc);	// cannot longjmp here
+				host_irq_unlock();
+				__atomic_add_fetch(&StallCount, 1, __ATOMIC_SEQ_CST);
+				logit = !WdEpisode;
+				WdEpisode = 1;
+			}
+			__atomic_store_n(&InPump, PUMP_FREE, __ATOMIC_RELEASE);
+		}
+	}
+
+	__atomic_store_n(&WdBusy, 0, __ATOMIC_RELEASE);
+	if (logit) plat_log("stall: game loop without SDK calls, advancing time");
 }

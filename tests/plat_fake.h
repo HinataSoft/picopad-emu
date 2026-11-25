@@ -9,7 +9,9 @@
 extern "C" {
 #endif
 
-extern unsigned long long fake_now;            /* plat_now_us(); plat_sleep_us adds to it */
+extern volatile unsigned long long fake_now;   /* plat_now_us(); plat_sleep_us adds to it; volatile and
+                                                  read/added atomically (64 bit on i686) by plat_fake,
+                                                  so a helper thread may advance it with __atomic_add_fetch */
 extern unsigned long long fake_sleep_min_us;   /* models OS sleep granularity: a sleep
                                                   advances at least this much (0 = exact) */
 extern int fake_sleep_count;                   /* number of plat_sleep_us() calls */

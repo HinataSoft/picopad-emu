@@ -11,7 +11,9 @@
 //    front buffer at display refresh (vsync, or ~60 Hz without vsync);
 //  - game thread: host_run_game() = RuntimeInit + the game's main();
 //    plat_present() copies the rect into the mutex protected front buffer;
-//  - SDL audio thread: the callback only calls host_audio_render().
+//  - SDL audio thread: the callback only calls host_audio_render();
+//  - watchdog thread: host_watchdog() every WATCHDOG_MS until the game is done
+//    (unsticks a game looping without SDK calls, see host/pump.c).
 //
 // Exit codes: game thread finished -> its code (0 ResetToBootLoader, 1 fatal),
 // window close / Ctrl+C -> 0, --max-time reached -> 3, bad arguments -> 2.
@@ -48,6 +50,7 @@
 #define AUDIO_SAMPLES 512                  // device buffer [frames]
 #define EVENT_WAIT_MS 5                    // main loop wake-up period
 #define NOVSYNC_FRAME_US 16000ull          // present interval without vsync
+#define WATCHDOG_MS 20                     // host_watchdog period
 
 // ---------------------------------------------------------------------------
 // shared state
@@ -196,6 +199,17 @@ static int SDLCALL game_thread(void* arg)
 	return code;
 }
 
+static int SDLCALL watchdog_thread(void* arg)
+{
+	(void)arg;
+	while (!SDL_AtomicGet(&GameDone))
+	{
+		host_watchdog();   // no-op unless a game is inside host_run_game
+		SDL_Delay(WATCHDOG_MS);
+	}
+	return 0;
+}
+
 static void SDLCALL audio_callback(void* user, Uint8* stream, int len)
 {
 	(void)user;
@@ -230,6 +244,7 @@ static int audio_open(void)
 // exit
 
 static SDL_Thread* GameThread;
+static SDL_Thread* WatchdogThread;         // NULL if it could not be created
 
 // Ends the process with 'code'. When the game thread has finished, shuts down
 // normally; otherwise terminates the process (the game thread is still
@@ -242,6 +257,7 @@ static void finish(int code)
 	if (SDL_AtomicGet(&GameDone))
 	{
 		SDL_WaitThread(GameThread, NULL);
+		if (WatchdogThread != NULL) SDL_WaitThread(WatchdogThread, NULL);   // sees GameDone within WATCHDOG_MS
 		SDL_Quit();
 		timeEndPeriod(1);
 		exit(code);
@@ -340,6 +356,9 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "%s: cannot create game thread: %s\n", PICOPAD_GAME_NAME, SDL_GetError());
 		return 1;
 	}
+	WatchdogThread = SDL_CreateThread(watchdog_thread, "watchdog", NULL);
+	if (WatchdogThread == NULL)
+		plat_logf("watchdog: cannot create thread (%s), stall protection off", SDL_GetError());
 
 	const unsigned long long start = plat_now_us();
 	const unsigned long long deadline = opt.max_time_ms ? start + (unsigned long long)opt.max_time_ms * 1000ull : 0;

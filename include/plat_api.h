@@ -35,6 +35,9 @@ void host_configure(const host_config* cfg);
 int  host_run_game(void);                 /* RuntimeInit + game_main on the calling thread; returns exit code */
 void host_audio_render(short* out, int frames);   /* mono s16; called from audio thread */
 unsigned long long host_now_us(void);     /* emulated device time (µs since start) */
+void host_watchdog(void);                 /* from one non-game thread every ~20 ms: unsticks a game
+                                             looping without SDK calls (see host/pump.c) */
+unsigned int host_stall_count(void);      /* watchdog interventions since host_run_game start */
 
 #ifdef __cplusplus
 }

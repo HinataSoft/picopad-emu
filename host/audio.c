@@ -8,9 +8,10 @@
 // preempting the game on the same core. The SDK sound API (PlaySoundChan,
 // StopSoundChan) is not thread-safe against a mixer running in parallel, so
 // the host never runs the mixer on another thread:
-//  - host_audio_pump() runs on the game thread (called from host_pump(), not
-//    while the game holds IRQ_LOCK). It is driven by emulated time: after a
-//    pump exactly floor(host_now_us() * rate / 1e6) samples were produced since
+//  - host_audio_pump() runs under the pump lock: on the game thread (called
+//    from host_pump(), not while the game holds IRQ_LOCK) or in a stall step
+//    of host_watchdog (holding IRQ_LOCK), never both at once. It is driven by
+//    emulated time: after a pump exactly floor(host_now_us() * rate / 1e6) samples were produced since
 //    host_run_game start (plus AUDIO_TARGET lead with PLAT_AUDIO_RING). Each
 //    sample is one call of the stored IRQ_PWM_WRAP handler, converted to s16
 //    ((samp-1024)*32). Without PWM_Enable or handler the samples are 0, so time
@@ -43,10 +44,10 @@ static volatile int pwm_enabled[HOST_PWM_SLICES];
 static volatile u32 snd_comp = 1024;	// last compare value of the sound channel
 
 static short ring[AUDIO_RING];
-static unsigned int ring_head;		// written by the game thread only (atomic)
+static unsigned int ring_head;		// written under the pump lock only (atomic)
 static unsigned int ring_tail;		// written by the audio thread only (atomic)
 static short last_out;			// audio thread only: last delivered value
-static unsigned long long produced;	// samples produced since host_run_game start (game thread)
+static unsigned long long produced;	// samples produced since host_run_game start (pump lock)
 
 void host_set_handler(int irq, void (*fn)(void))
 {
@@ -66,7 +67,8 @@ void host_pwm_enable(int slice, int on)
 	pwm_enabled[slice] = on ? 1 : 0;
 }
 
-// game thread: produce the samples that are due by emulated time
+// under the pump lock (game thread or watchdog): produce the samples that are
+// due by emulated time; 'produced' and the ring head are only touched here
 void host_audio_pump(void)
 {
 	const host_config* cfg = host_cfg();

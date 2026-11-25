@@ -29,6 +29,11 @@ void host_wait_us(unsigned long long us);
 // restart emulated time at 0 (called by host_run_game)
 void host_clock_reset(void);
 
+// virtual clock only: raise the virtual counter to 'tick_us' (the time of the
+// next SysTick, LastTick + 5000) if it is behind; never moves it back; atomic,
+// called under the pump lock (game thread idle guard or watchdog)
+void host_clock_advance_to_next_tick(unsigned long long tick_us);
+
 // --- pump.c
 
 // 1 when called on the game thread (the thread inside host_run_game)
@@ -48,10 +53,19 @@ void host_request_exit(int code);
 // forget a pending exit request (start of host_run_game)
 void host_pump_clear_exit(void);
 
+// game thread: restart the virtual-clock idle count (host_wait_us)
+void host_pump_idle_reset(void);
+
+// game thread: 1 = a game runs (enables host_watchdog, resets the stall count;
+// after the resets at host_run_game start), 0 = game finished (waits for a
+// running watchdog step; before host_pump_reset at the end)
+void host_pump_activate(int on);
+
 // --- audio.c
 
-// game thread (from host_pump): produce the sound samples due by emulated
-// time (runs the stored PWM-wrap handler once per sample)
+// under the pump lock (host_pump on the game thread, or a host_watchdog
+// step): produce the sound samples due by emulated time (runs the stored
+// PWM-wrap handler once per sample)
 void host_audio_pump(void);
 void host_audio_reset(void);		// restart the produced-sample counter (host_run_game)
 

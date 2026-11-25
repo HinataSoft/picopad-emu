@@ -27,3 +27,9 @@ int thr_join(void* p, int timeout_ms)
     struct thr* t = (struct thr*)p;
     return WaitForSingleObject(t->h, (DWORD)timeout_ms) == WAIT_OBJECT_0;
 }
+
+/* real monotonic time [ms] (bounds helper-thread loops) */
+unsigned long long thr_ms(void)
+{
+    return (unsigned long long)GetTickCount64();
+}

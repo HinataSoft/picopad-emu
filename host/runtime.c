@@ -90,6 +90,7 @@ int host_run_game(void)
 	host_pump_reset();
 	host_audio_reset();
 	host_pump_clear_exit();
+	host_pump_activate(1);		// host_watchdog may act from now on
 
 	code = setjmp(GameJmp);
 	if (code == 0)
@@ -106,6 +107,7 @@ int host_run_game(void)
 		code = (code == JMP_RESET) ? 0 : 1;
 
 	GameJmpValid = 0;
+	host_pump_activate(0);		// waits for a running watchdog step
 	host_pump_reset();
 	host_set_game_thread(0);
 	return code;

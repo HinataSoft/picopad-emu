@@ -7,7 +7,9 @@
 //  Real clock (virtual_clock = 0): plat_now_us() - start.
 //  Virtual clock (virtual_clock = 1): a counter advanced only by WaitUs/WaitMs
 //   (and by the display transfer model through host_wait_us). Code that polls
-//   Time() in a loop without waiting does not advance it.
+//   Time() in a loop without waiting does not advance it by itself; the pump's
+//   idle guard (PUMP_IDLE_CALLS pumps without progress) and the stall watchdog
+//   step it to the next SysTick (host_clock_advance_to_next_tick, pump.c).
 // Real-clock waits keep an absolute deadline (WaitDeadline): a wait sets it to
 // the emulated time at entry plus the requested time and sleeps only while it
 // is at least WAIT_MIN_SLEEP_US ahead of real time; a shorter remainder is not
@@ -25,8 +27,11 @@
 
 static host_config HostCfg = { 0, 1, 1, 0 };	// virtual_clock, fast_display, seed, audio_rate
 static unsigned long long RealStart;		// plat_now_us() at host_clock_reset()
-static unsigned long long VirtNow;		// virtual clock counter [us]
-static unsigned long long WaitDeadline;		// real clock: end of the requested waits [us]
+// VirtNow and WaitDeadline are read by the watchdog thread too (host_now_us
+// in its pump step) and VirtNow is also raised by it: 64-bit values on i686,
+// so every access is atomic (never torn), VirtNow only moves forward
+static unsigned long long VirtNow;		// virtual clock counter [us] (atomic)
+static unsigned long long WaitDeadline;		// real clock: end of the requested waits [us] (atomic, game thread writes)
 
 #define WAIT_MIN_SLEEP_US	1000ULL		// sleep only if the deadline is this far ahead
 #define WAIT_MAX_SLEEP_US	1000ULL		// longest single sleep (pump in between)
@@ -44,8 +49,16 @@ const host_config* host_cfg(void)
 void host_clock_reset(void)
 {
 	RealStart = plat_now_us();
-	VirtNow = 0;
-	WaitDeadline = 0;
+	__atomic_store_n(&VirtNow, 0, __ATOMIC_SEQ_CST);
+	__atomic_store_n(&WaitDeadline, 0, __ATOMIC_SEQ_CST);
+}
+
+void host_clock_advance_to_next_tick(unsigned long long tick_us)
+{
+	if (!HostCfg.virtual_clock) return;
+	unsigned long long cur = __atomic_load_n(&VirtNow, __ATOMIC_RELAXED);
+	while (cur < tick_us && !__atomic_compare_exchange_n(&VirtNow, &cur, tick_us, 0,
+			__ATOMIC_RELAXED, __ATOMIC_RELAXED)) { }
 }
 
 // real time since host_clock_reset() [us]
@@ -56,9 +69,10 @@ static unsigned long long real_now_us(void)
 
 unsigned long long host_now_us(void)
 {
-	if (HostCfg.virtual_clock) return VirtNow;
+	if (HostCfg.virtual_clock) return __atomic_load_n(&VirtNow, __ATOMIC_RELAXED);
 	unsigned long long real = real_now_us();
-	return (real > WaitDeadline) ? real : WaitDeadline;
+	unsigned long long dl = __atomic_load_n(&WaitDeadline, __ATOMIC_RELAXED);
+	return (real > dl) ? real : dl;
 }
 
 // Time() of the SDK; pumps, so loops polling Time() still get SysTick and,
@@ -71,6 +85,11 @@ u32 host_time_us32(void)
 
 void host_wait_us(unsigned long long us)
 {
+	unsigned long long deadline;
+
+	// a real wait restarts the idle count of the pump (virtual clock guard)
+	if (us > 0 && host_is_game_thread()) host_pump_idle_reset();
+
 	if (HostCfg.virtual_clock)
 	{
 		// advance in steps of at most 5000 us (one SysTick period) and pump
@@ -78,7 +97,7 @@ void host_wait_us(unsigned long long us)
 		do
 		{
 			unsigned long long step = (us > 5000) ? 5000 : us;
-			VirtNow += step;
+			__atomic_add_fetch(&VirtNow, step, __ATOMIC_RELAXED);
 			us -= step;
 			host_pump();
 		} while (us > 0);
@@ -87,12 +106,13 @@ void host_wait_us(unsigned long long us)
 
 	// host_now_us() >= WaitDeadline always, so assigning (not max'ing) keeps
 	// the deadline - and with it the emulated time - monotonic
-	WaitDeadline = host_now_us() + us;
+	deadline = host_now_us() + us;
+	__atomic_store_n(&WaitDeadline, deadline, __ATOMIC_RELAXED);
 	for (;;)
 	{
 		unsigned long long now = real_now_us();
-		if (WaitDeadline < now + WAIT_MIN_SLEEP_US) break;
-		unsigned long long step = WaitDeadline - now;
+		if (deadline < now + WAIT_MIN_SLEEP_US) break;
+		unsigned long long step = deadline - now;
 		if (step > WAIT_MAX_SLEEP_US) step = WAIT_MAX_SLEEP_US;
 		plat_sleep_us(step);
 		host_pump();
