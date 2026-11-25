@@ -17,6 +17,14 @@ get_filename_component(PICOPAD_EMU_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(PICOPAD_TOOLCHAIN_DIR "${PICOPAD_EMU_ROOT}/../toolchain" CACHE PATH "Adresar s prenosnymi nastroji (SDL2, MinGW, Ninja)")
 set(PICOLIBSDK_DIR "${PICOPAD_EMU_ROOT}/../PicoLibSDK" CACHE PATH "Adresar PicoLibSDK")
 
+# jazykove standardy jako v emulatoru (vlastni hodnoty cizího projektu se nemeni)
+if(NOT DEFINED CMAKE_C_STANDARD)
+    set(CMAKE_C_STANDARD 11)
+endif()
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
+
 # SDL2 devel (mingw, i686); sdl2-config.cmake definuje SDL2::SDL2 a SDL2::SDL2main
 file(GLOB _sdl2_roots "${PICOPAD_TOOLCHAIN_DIR}/SDL2-*/i686-w64-mingw32")
 if(NOT _sdl2_roots)

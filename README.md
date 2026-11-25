@@ -155,7 +155,7 @@ cmake --build build
 ```
 
 - `PICOPAD_EMU_DIR` – kořen repa picopad-emu; předává se příkazem `-D` (a v `CMakeLists.txt` cizího projektu se používá jen k `include`).
-- `PICOLIBSDK_DIR` – kořen PicoLibSDK, výchozí `<picopad-emu>/../PicoLibSDK`. SDK se nemění a nic se do něj nezapisuje.
+- `PICOLIBSDK_DIR` – kořen PicoLibSDK, výchozí `<picopad-emu>/../PicoLibSDK`; relativní hodnota se vztahuje k repu emulátoru, doporučují se absolutní cesty. SDK se nemění a nic se do něj nezapisuje.
 - `PICOPAD_TOOLCHAIN_DIR` – adresář s `mingw32/`, `ninja/` a `SDL2-<verze>/`, výchozí `<picopad-emu>/../toolchain`. Čte ho `toolchain-mingw32.cmake` (překladače, Ninja) i `PicopadEmu.cmake` (SDL2).
 
 Obě cesty (`PICOLIBSDK_DIR`, `PICOPAD_TOOLCHAIN_DIR`) jdou přepsat parametrem `-D` při configure. Opakované `include` `PicopadEmu.cmake` je neškodné. Funkčnost hlídá test `external_project` (label `slow`): `tests/external` je takový minimální cizí projekt, test ho nakonfiguruje do `build/external`, sestaví a spustí `HELLO.exe --headless --max-time 1s` s očekávaným kódem 3 (`ctest -LE slow` ho vynechá).

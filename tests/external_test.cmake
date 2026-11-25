@@ -2,6 +2,7 @@
 # builds HELLO.exe and the exe runs headless.
 #   -DEMU_DIR=<picopad-emu repo> -DBUILD_DIR=<dir, emptied at start>
 #   -DTOOLCHAIN_FILE=<toolchain-mingw32.cmake> -DGENERATOR=Ninja
+#   [-DPICOPAD_TOOLCHAIN_DIR=...] [-DPICOLIBSDK_DIR=...]  forwarded to the project
 if(NOT DEFINED EMU_DIR OR NOT DEFINED BUILD_DIR OR NOT DEFINED TOOLCHAIN_FILE)
     message(FATAL_ERROR "usage: cmake -DEMU_DIR=... -DBUILD_DIR=... -DTOOLCHAIN_FILE=... -P external_test.cmake")
 endif()
@@ -12,9 +13,19 @@ endif()
 file(REMOVE_RECURSE "${BUILD_DIR}")
 file(MAKE_DIRECTORY "${BUILD_DIR}")
 
+# forward the main build's directories to the nested project
+set(_fwd)
+if(PICOPAD_TOOLCHAIN_DIR)
+    list(APPEND _fwd "-DPICOPAD_TOOLCHAIN_DIR=${PICOPAD_TOOLCHAIN_DIR}")
+endif()
+if(PICOLIBSDK_DIR)
+    list(APPEND _fwd "-DPICOLIBSDK_DIR=${PICOLIBSDK_DIR}")
+endif()
+
 execute_process(COMMAND ${CMAKE_COMMAND} -S "${EMU_DIR}/tests/external" -B "${BUILD_DIR}"
                         -G "${GENERATOR}" "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE}"
                         "-DPICOPAD_EMU_DIR=${EMU_DIR}" -DCMAKE_BUILD_TYPE=Debug
+                        ${_fwd}
                 RESULT_VARIABLE _rc)
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "configure of tests/external failed (${_rc})")

@@ -6,7 +6,11 @@ if(NOT PICOPAD_TOOLCHAIN_DIR)
     get_filename_component(PICOPAD_TOOLCHAIN_DIR "${CMAKE_CURRENT_LIST_DIR}/../../toolchain" ABSOLUTE)
 endif()
 
+# try_compile projects re-include this file without the cache: pass the override on
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES PICOPAD_TOOLCHAIN_DIR)
+
 set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR i686)
 set(CMAKE_C_COMPILER   "${PICOPAD_TOOLCHAIN_DIR}/mingw32/bin/gcc.exe")
 set(CMAKE_CXX_COMPILER "${PICOPAD_TOOLCHAIN_DIR}/mingw32/bin/g++.exe")
 set(CMAKE_ASM_COMPILER "${PICOPAD_TOOLCHAIN_DIR}/mingw32/bin/gcc.exe")

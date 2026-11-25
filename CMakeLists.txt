@@ -233,5 +233,7 @@ add_test(NAME external_project
                  -DEMU_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                  -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/external
                  -DTOOLCHAIN_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain-mingw32.cmake
+                 -DPICOPAD_TOOLCHAIN_DIR=${PICOPAD_TOOLCHAIN_DIR}
+                 -DPICOLIBSDK_DIR=${PICOLIBSDK_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_test.cmake)
 set_tests_properties(external_project PROPERTIES LABELS slow TIMEOUT 900)
