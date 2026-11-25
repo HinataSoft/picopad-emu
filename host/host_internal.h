@@ -41,6 +41,14 @@ void host_set_game_thread(int on);
 // calling thread (start of host_run_game and after longjmp out of the game)
 void host_pump_reset(void);
 
+// forget an exit code left pending by another thread (start of host_run_game)
+void host_pump_clear_exit(void);
+
+// --- runtime.c (exit)
+
+// leave host_run_game with the given exit code (game thread only)
+void host_exit(int code) __attribute__((noreturn));
+
 // --- audio.c
 
 // game thread (from host_pump): produce the sound samples due by emulated

@@ -42,6 +42,7 @@ static __thread int IrqDepth;		// IRQ lock nesting of this thread
 static __thread char IrqTag;		// address = identity of this thread
 static void* volatile IrqOwner;		// thread holding the IRQ mutex, NULL = free
 
+static volatile int PendingExit = -1;	// exit code from plat_tick on another thread, <0 = none
 static int InPump;			// reentrancy flag (game thread only)
 static unsigned long long LastTick;	// emulated time of the last SysTick [us]
 static unsigned long long SpinStart;	// start of the spin window [us]
@@ -76,6 +77,11 @@ void host_irq_unlock(void)
 {
 	if (IrqDepth <= 0) return;	// unmatched unlock
 	if (--IrqDepth == 0) __atomic_store_n(&IrqOwner, NULL, __ATOMIC_RELEASE);
+}
+
+void host_pump_clear_exit(void)
+{
+	__atomic_store_n(&PendingExit, -1, __ATOMIC_SEQ_CST);
 }
 
 void host_pump_reset(void)
@@ -120,6 +126,11 @@ static void SysTickHandler(void)
 
 void host_pump(void)
 {
+	if (GameThread && !InPump && IrqDepth == 0)
+	{
+		int pending = __atomic_load_n(&PendingExit, __ATOMIC_SEQ_CST);
+		if (pending >= 0) host_exit(pending);	// ordered by a plat_tick on another thread
+	}
 	if (!GameThread || InPump || IrqDepth > 0) return;
 	InPump = 1;
 
@@ -127,6 +138,13 @@ void host_pump(void)
 	while (now - LastTick >= PUMP_TICK_US)
 	{
 		LastTick += PUMP_TICK_US;
+		int rc = plat_tick(LastTick);
+		if (rc >= 0)
+		{
+			if (GameThread) host_exit(rc);
+			__atomic_store_n(&PendingExit, rc, __ATOMIC_SEQ_CST);	// game thread exits at its next pump
+			break;
+		}
 		SysTickHandler();
 	}
 

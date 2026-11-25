@@ -126,6 +126,12 @@ extern "C" void plat_audio_write(const short* s, int n)
 	(void)n;   // PLAT_AUDIO_CAPTURE is not used by the interactive build
 }
 
+extern "C" int plat_tick(unsigned long long t_us)
+{
+	(void)t_us;
+	return -1;   // interactive build: the window/Ctrl+C end the game
+}
+
 extern "C" void plat_log(const char* msg)
 {
 	if (LogMutex) SDL_LockMutex(LogMutex);

@@ -15,6 +15,9 @@ char fake_log[256];
 int fake_log_count = 0;
 short fake_audio[65536];
 int fake_audio_count = 0;
+unsigned long long fake_tick_times[64];
+int fake_tick_count = 0;
+int (*fake_tick_fn)(unsigned long long t_us) = NULL;
 
 unsigned long long plat_now_us(void) { return fake_now; }
 
@@ -53,4 +56,11 @@ void plat_audio_write(const short* s, int n)
             fake_audio[fake_audio_count] = s[i];
         fake_audio_count++;
     }
+}
+
+int plat_tick(unsigned long long t_us)
+{
+    if (fake_tick_count < 64) fake_tick_times[fake_tick_count] = t_us;
+    fake_tick_count++;
+    return fake_tick_fn ? fake_tick_fn(t_us) : -1;
 }

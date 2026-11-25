@@ -28,11 +28,13 @@
 
 #define JMP_RESET	1	// longjmp code: ResetToBootLoader
 #define JMP_FATAL	2	// longjmp code: panic / fatal error
+#define JMP_EXIT	3	// longjmp code: host_exit (code in ExitCode)
 
 #define AUDIO_RATE_DEF	44100	// CLK_SYS base when audio is off
 
 static jmp_buf GameJmp;
 static volatile int GameJmpValid;	// 1 = GameJmp is set (inside host_run_game)
+static volatile int ExitCode;		// exit code of host_exit
 static u32 RoscState;			// state of the deterministic RoscRand
 
 // ROSC random generator replacement: deterministic sequence from
@@ -87,6 +89,7 @@ int host_run_game(void)
 	host_clock_reset();
 	host_pump_reset();
 	host_audio_reset();
+	host_pump_clear_exit();
 
 	code = setjmp(GameJmp);
 	if (code == 0)
@@ -97,6 +100,8 @@ int host_run_game(void)
 		DeviceTerm();
 		code = 0;
 	}
+	else if (code == JMP_EXIT)
+		code = ExitCode;
 	else
 		code = (code == JMP_RESET) ? 0 : 1;
 
@@ -104,6 +109,14 @@ int host_run_game(void)
 	host_pump_reset();
 	host_set_game_thread(0);
 	return code;
+}
+
+// end the game from the platform (plat_tick): exit code 'code'
+void host_exit(int code)
+{
+	if (!GameJmpValid || !host_is_game_thread()) host_fatal("host_exit outside of the game");
+	ExitCode = code;
+	longjmp(GameJmp, JMP_EXIT);
 }
 
 void ResetToBootLoader(void)

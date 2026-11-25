@@ -21,6 +21,9 @@ extern char fake_log[256];                     /* last plat_log() message */
 extern int fake_log_count;                     /* number of plat_log() calls */
 extern short fake_audio[65536];                /* first 65536 samples passed to plat_audio_write */
 extern int fake_audio_count;                   /* all samples passed to plat_audio_write */
+extern unsigned long long fake_tick_times[64]; /* t_us of the first 64 plat_tick() calls */
+extern int fake_tick_count;                    /* all plat_tick() calls */
+extern int (*fake_tick_fn)(unsigned long long t_us); /* plat_tick result; NULL = -1 */
 
 #ifdef __cplusplus
 }
