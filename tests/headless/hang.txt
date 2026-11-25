@@ -1,0 +1,2 @@
+# HANG: the game loops without SDK calls; quit needs the hang kill
+300 quit

@@ -10,6 +10,7 @@
 #   [-DCOMPARE=f;ref;f;ref]   pairs: file equal byte for byte to ref
 #   [-DWAV=f]                 WAV header sizes valid and sample count within
 #                             one tick (221 samples) of t*44.1 from the end line
+#   [-DMAX_SECONDS=n]         the run must take at most n seconds of real time
 if(NOT DEFINED EXE OR NOT DEFINED EXPECT OR NOT DEFINED WORK_DIR)
     message(FATAL_ERROR "usage: cmake -DEXE=... -DEXPECT=... -DWORK_DIR=... [...] -P headless_test.cmake")
 endif()
@@ -20,19 +21,26 @@ if(MAKE_FILE)
     file(WRITE "${WORK_DIR}/${MAKE_FILE}" "")
 endif()
 
+string(TIMESTAMP _t0 "%s")
 execute_process(COMMAND "${EXE}" ${ARGS}
                 WORKING_DIRECTORY "${WORK_DIR}"
                 RESULT_VARIABLE _rc
                 OUTPUT_VARIABLE _out
                 ERROR_VARIABLE _err
                 TIMEOUT 30)
-message(STATUS "exit code: ${_rc}")
+string(TIMESTAMP _t1 "%s")
+math(EXPR _secs "${_t1} - ${_t0}")
+message(STATUS "exit code: ${_rc}, ${_secs} s")
 message(STATUS "stdout:\n${_out}")
 if(_err)
     message(STATUS "stderr:\n${_err}")
 endif()
 
 set(_fail "")
+if(MAX_SECONDS AND _secs GREATER MAX_SECONDS)
+    string(APPEND _fail "run took ${_secs} s, expected at most ${MAX_SECONDS} s
+")
+endif()
 if(NOT "${_rc}" STREQUAL "${EXPECT}")
     string(APPEND _fail "exit code '${_rc}', expected ${EXPECT}\n")
 endif()

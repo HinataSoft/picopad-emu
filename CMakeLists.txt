@@ -150,13 +150,15 @@ add_test(NAME script COMMAND test_script)
 # Testovaci hry pro headless rezim (jen pro emulator)
 picopad_add_game(KEYWAIT ${CMAKE_SOURCE_DIR}/tests/games/KEYWAIT)
 picopad_add_game(STALL ${CMAKE_SOURCE_DIR}/tests/games/STALL)
+picopad_add_game(HANG ${CMAKE_SOURCE_DIR}/tests/games/HANG)
 
 # picopad_headless_test(<name> <game target> <exit code> [ARGS ...] [STDOUT ...]
-#     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f])
+#     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f]
+#     [MAX_SECONDS n])
 # runs tests/headless_test.cmake in its own directory build/headless/<name>
 set(PICOPAD_HL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/headless")
 function(picopad_headless_test name game expect)
-    cmake_parse_arguments(HT "" "MAKE_FILE;WAV" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
+    cmake_parse_arguments(HT "" "MAKE_FILE;WAV;MAX_SECONDS" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
     set(_work "${CMAKE_CURRENT_BINARY_DIR}/headless/${name}")
     add_test(NAME ${name}
              COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${game}> -DEXPECT=${expect}
@@ -169,6 +171,7 @@ function(picopad_headless_test name game expect)
                      "-DCOMPARE=${HT_COMPARE}"
                      "-DMAKE_FILE=${HT_MAKE_FILE}"
                      "-DWAV=${HT_WAV}"
+                     "-DMAX_SECONDS=${HT_MAX_SECONDS}"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/headless_test.cmake)
     set_tests_properties(${name} PROPERTIES TIMEOUT 40)
 endfunction()
@@ -189,6 +192,12 @@ picopad_headless_test(keywait_noscript KEYWAIT 3
 picopad_headless_test(stall_headless STALL 0
     ARGS --headless
     STDOUT "^end reason=exit t=[0-9]+ code=0 stalls=[1-9][0-9]* pending=0$")
+# hra po vykresleni smycka bez volani SDK: cas posouva jen hlidac (~20 ms
+# realneho casu na tick), quit v 300 ms ceka na zabiti po HANG_KILL_MS (1 s)
+picopad_headless_test(hang_quit HANG 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/hang.txt
+    STDOUT "^end reason=quit t=300 code=0 stalls=[1-9][0-9]* pending=0$"
+    MAX_SECONDS 8)
 picopad_headless_test(hello_headless HELLO 0
     ARGS --headless --script ${PICOPAD_HL_DIR}/hello.txt
     STDOUT "^start game=HELLO seed=0 rate=44100$"
