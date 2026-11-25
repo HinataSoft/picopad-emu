@@ -12,7 +12,7 @@
 //    from host_pump(), not while the game holds IRQ_LOCK) or in a stall step
 //    of host_watchdog (holding IRQ_LOCK), never both at once. It is driven by
 //    emulated time: after a pump exactly floor(host_now_us() * rate / 1e6) samples were produced since
-//    host_run_game start (plus AUDIO_TARGET lead with PLAT_AUDIO_RING). Each
+//    host_run_game start (plus a lead with PLAT_AUDIO_RING, see below). Each
 //    sample is one call of the stored IRQ_PWM_WRAP handler, converted to s16
 //    ((samp-1024)*32). Without PWM_Enable or handler the samples are 0, so time
 //    keeps flowing and PlayingSound() finishes even without an audio device.
@@ -22,6 +22,16 @@
 //  - host_audio_render() (audio thread) only drains the ring with atomics and
 //    never calls SDK code. Underrun repeats the last value, silence (0)
 //    before anything was produced.
+// Drift correction (PLAT_AUDIO_RING only): production follows the emulated
+// (QPC-based) clock, the audio device consumes on its own crystal. The lead
+// starts at AUDIO_TARGET and moves by one sample per AUDIO_ADJ_SAMPLES of
+// emulated time (at most AUDIO_ADJ_MAX_STEP per pump, so a long gap between
+// pumps does not jump it) while the ring level is below AUDIO_LOW (lead up)
+// or between AUDIO_HIGH and the 2*AUDIO_TARGET cap (lead down; at the cap the
+// consumer is stalled, not drifting, and the samples are dropped instead).
+// The level thus stays in [AUDIO_LOW, AUDIO_HIGH] for any drift up to
+// 1/AUDIO_ADJ_SAMPLES (~3 %). PLAT_AUDIO_CAPTURE (headless/WAV) is unaffected:
+// exactly floor(t * rate / 1e6) samples, deterministic.
 // The mixer rate is audio_rate, 0 meaning 44100.
 
 #include "host_internal.h"
@@ -34,6 +44,10 @@
 #define AUDIO_TARGET	2048	// ring lead before the audio device [frames] (~46 ms @44100)
 #define AUDIO_RATE_DEF	44100	// mixer rate when audio_rate == 0
 #define AUDIO_CAPTURE_CHUNK 256	// samples per plat_audio_write call
+#define AUDIO_LOW	1024	// ring level below which the lead grows [frames]
+#define AUDIO_HIGH	3072	// ring level above which the lead shrinks [frames]
+#define AUDIO_ADJ_SAMPLES 32	// emulated samples per lead step of 1 sample (max drift ~3 %)
+#define AUDIO_ADJ_MAX_STEP 8	// max lead change per pump [frames]
 
 // sound output slice/channel chosen by PWMSndInit (lib_pwmsnd.c)
 extern int PWMSndSlice;
@@ -48,6 +62,8 @@ static unsigned int ring_head;		// written under the pump lock only (atomic)
 static unsigned int ring_tail;		// written by the audio thread only (atomic)
 static short last_out;			// audio thread only: last delivered value
 static unsigned long long produced;	// samples produced since host_run_game start (pump lock)
+static long long lead = AUDIO_TARGET;	// ring mode: production ahead of emulated time [frames] (pump lock)
+static unsigned long long adj_base;	// ring mode: emulated sample time of the last lead step (pump lock)
 
 void host_set_handler(int irq, void (*fn)(void))
 {
@@ -81,7 +97,21 @@ void host_audio_pump(void)
 	rate = cfg->audio_rate > 0 ? cfg->audio_rate : AUDIO_RATE_DEF;
 	out = cfg->audio_out;
 	due = host_now_us() * (unsigned long long)rate / 1000000ULL;
-	if (out & PLAT_AUDIO_RING) due += AUDIO_TARGET;
+	if (out & PLAT_AUDIO_RING)
+	{
+		// drift correction: steer the lead by the ring level
+		unsigned long long steps = (due - adj_base) / AUDIO_ADJ_SAMPLES;
+		unsigned int level = ring_head - __atomic_load_n(&ring_tail, __ATOMIC_ACQUIRE);
+		if (steps > 0)
+		{
+			adj_base += steps * AUDIO_ADJ_SAMPLES;
+			if (steps > AUDIO_ADJ_MAX_STEP) steps = AUDIO_ADJ_MAX_STEP;
+			if (level < AUDIO_LOW) lead += (long long)steps;
+			else if (level > AUDIO_HIGH && level < 2 * AUDIO_TARGET) lead -= (long long)steps;
+		}
+		if (lead >= 0) due += (unsigned long long)lead;
+		else due = (due > (unsigned long long)-lead) ? due - (unsigned long long)-lead : 0;
+	}
 
 	// without PWM_Enable or without a handler the samples are 0, time still flows
 	slice = PWMSndSlice;
@@ -125,6 +155,13 @@ void host_audio_pump(void)
 void host_audio_reset(void)
 {
 	produced = 0;
+	lead = AUDIO_TARGET;
+	adj_base = 0;
+}
+
+unsigned int host_audio_ring_level(void)
+{
+	return __atomic_load_n(&ring_head, __ATOMIC_ACQUIRE) - __atomic_load_n(&ring_tail, __ATOMIC_ACQUIRE);
 }
 
 // audio thread: drain only, never calls SDK code

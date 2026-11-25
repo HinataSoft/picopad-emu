@@ -71,6 +71,7 @@ void host_watchdog_unwind(void);
 // step): produce the sound samples due by emulated time (runs the stored
 // PWM-wrap handler once per sample)
 void host_audio_pump(void);
+unsigned int host_audio_ring_level(void);	// samples in the ring (head - tail), for tests
 void host_audio_reset(void);		// restart the produced-sample counter (host_run_game)
 
 // --- runtime.c

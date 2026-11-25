@@ -5,12 +5,15 @@
 #include "_sdk/inc/sdk_irq.h"
 #include "_lib/inc/lib_pwmsnd.h"
 
+#include <stdio.h>
+
 #include "check.h"
 #include "plat_fake.h"
 
 void* thr_start(void (*fn)(void*), void* arg);
 int thr_join(void* t, int timeout_ms);
 int host_is_game_thread(void);
+unsigned int host_audio_ring_level(void);
 void PWMSndIrq(void);
 
 static u8 snd[4410]; /* 0.2 s @22050 Hz */
@@ -36,7 +39,8 @@ static void render_thread(void* arg)
     }
 }
 
-static int run_mode; /* 0 = capture, 1 = discard (audio_out 0), 2 = ring + render thread */
+static int run_mode; /* 0 = capture, 1 = discard (audio_out 0), 2 = ring + render thread,
+                        3 = ring, consumer clock faster/slower than emulated time */
 
 #define DUE(t) ((int)((unsigned long long)(t) * 44100 / 1000000))
 
@@ -129,10 +133,47 @@ static void audio_game(void)
     CHECK_EQ(off_thread_calls, 0);
 }
 
+/* mode 3: the audio device runs on its own crystal, 'drift_ppm' faster
+   (> 0) or slower (< 0) than the emulated (QPC) time that drives production.
+   Over 25 minutes of exaggerated drift the ring level must stay bounded
+   around AUDIO_TARGET (2048): no sustained underrun, no pinning at the cap. */
+static int drift_ppm;
+static unsigned int drift_min = 99999, drift_max, drift_underruns;
+static void audio_drift(void)
+{
+    static short buf[1024];
+    const unsigned long long span_us = 25ull * 60 * 1000000;   /* 25 min */
+    const unsigned long long warm_us = 5ull * 1000000;         /* fill + settle */
+    unsigned long long t0 = fake_now, consumed = 0;
+    for (;;) {
+        unsigned long long el, due;
+        unsigned int lvl;
+        int n;
+        WaitMs(5);
+        el = fake_now - t0;
+        /* consumer: el * 44100 * (1 + ppm/1e6) samples so far */
+        due = el * 44100ull / 1000000ull;
+        if (drift_ppm >= 0) due += el * 44100ull / 1000000ull * (unsigned)drift_ppm / 1000000ull;
+        else due -= el * 44100ull / 1000000ull * (unsigned)(-drift_ppm) / 1000000ull;
+        n = (int)(due - consumed);
+        if (n > 1024) n = 1024;
+        if (el >= warm_us && host_audio_ring_level() < (unsigned)n) drift_underruns++;
+        host_audio_render(buf, n);
+        consumed += (unsigned)n;
+        lvl = host_audio_ring_level();
+        if (el >= warm_us) {
+            if (lvl < drift_min) drift_min = lvl;
+            if (lvl > drift_max) drift_max = lvl;
+        }
+        if (el >= span_us) break;
+    }
+}
+
 int host_call_game_main(void)
 {
     if (run_mode == 0) audio_capture();
     else if (run_mode == 1) audio_discard();
+    else if (run_mode == 3) audio_drift();
     else audio_game();
     ResetToBootLoader();
     return 0;
@@ -158,5 +199,23 @@ int main(void)
     host_configure(&cfg);
     run_mode = 2;
     CHECK_EQ(host_run_game(), 0);
+
+    /* drift: consumer 1.5 % faster, then 1.5 % slower than production */
+    run_mode = 3;
+    drift_ppm = 15000;
+    drift_min = 99999; drift_max = 0; drift_underruns = 0;
+    CHECK_EQ(host_run_game(), 0);
+    printf("drift +1.5%%: level %u..%u, underruns %u\n", drift_min, drift_max, drift_underruns);
+    CHECK(drift_min >= 512);
+    CHECK(drift_max <= 3584);
+    CHECK_EQ(drift_underruns, 0);
+
+    drift_ppm = -15000;
+    drift_min = 99999; drift_max = 0; drift_underruns = 0;
+    CHECK_EQ(host_run_game(), 0);
+    printf("drift -1.5%%: level %u..%u, underruns %u\n", drift_min, drift_max, drift_underruns);
+    CHECK(drift_min >= 512);
+    CHECK(drift_max <= 3584);
+    CHECK_EQ(drift_underruns, 0);
     return CHECK_DONE();
 }
