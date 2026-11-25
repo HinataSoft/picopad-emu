@@ -14,7 +14,13 @@ typedef struct {
     int fast_display;          /* 1 = no SPI transfer cost (default 0) */
     unsigned int seed;         /* RoscRand seed (default from time) */
     int seed_set;              /* 1 = --seed was given */
-    long long max_time_ms;     /* 0 = no limit; exit code 3 when reached */
+    long long max_time_ms;     /* 0 = no limit; exit code 3 when reached (headless default 60000) */
+    int max_time_set;          /* 1 = --max-time was given */
+    int headless;              /* 1 = --headless: no window, virtual time */
+    const char* script;        /* --script file (points into argv), NULL = none */
+    const char* shot_dir;      /* --shot-dir (points into argv), default "." */
+    const char* wav;           /* --wav file (points into argv), NULL = none; needs headless */
+    int trace_keys;            /* 1 = --trace-keys */
 } cli_options;
 
 /* return values of cli_parse */
@@ -25,6 +31,10 @@ typedef struct {
 /* Options (each also as --opt=value):
      --scale N   --keys letters|layout   --fast-display   --seed N
      --max-time T   (T = 2000, 2000ms or 2s)
+     --headless   --script FILE   --shot-dir DIR   --wav FILE   --trace-keys
+   Headless defaults (resolved after parsing, option order does not matter):
+   max_time_ms 60000 without --max-time, seed 0 without --seed (seed_set stays 0).
+   --wav requires --headless; --scale and --keys are accepted and ignored there.
    err receives a NUL-terminated message (at most errlen bytes). */
 int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen);
 

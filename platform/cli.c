@@ -15,6 +15,11 @@ static const char Usage[] =
     "  --fast-display         no SPI display transfer cost\n"
     "  --seed N               random seed (default from time)\n"
     "  --max-time T           quit with exit code 3 after T (2000, 2000ms or 2s)\n"
+    "  --headless             no window, virtual time, seed 0, --max-time 60s by default\n"
+    "  --script FILE          input script (headless)\n"
+    "  --shot-dir DIR         directory for screenshots (default .)\n"
+    "  --wav FILE             write audio to a WAV file (needs --headless)\n"
+    "  --trace-keys           log key events\n"
     "  --help                 this text";
 
 const char* cli_usage(void)
@@ -64,6 +69,12 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
     out->seed = time_seed();
     out->seed_set = 0;
     out->max_time_ms = 0;
+    out->max_time_set = 0;
+    out->headless = 0;
+    out->script = NULL;
+    out->shot_dir = ".";
+    out->wav = NULL;
+    out->trace_keys = 0;
 
     for (i = 1; i < argc; i++)
     {
@@ -85,22 +96,36 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
             return CLI_HELP;
         }
 
-        is_flag = strcmp(name, "--fast-display") == 0;
+        is_flag = strcmp(name, "--fast-display") == 0 || strcmp(name, "--headless") == 0 ||
+                  strcmp(name, "--trace-keys") == 0;
         if (is_flag)
         {
             if (val) return fail(err, errlen, "%s takes no value", name);
-            out->fast_display = 1;
+            if (strcmp(name, "--fast-display") == 0) out->fast_display = 1;
+            else if (strcmp(name, "--headless") == 0) out->headless = 1;
+            else out->trace_keys = 1;
             continue;
         }
 
         if (strcmp(name, "--scale") && strcmp(name, "--keys") &&
-            strcmp(name, "--seed") && strcmp(name, "--max-time"))
+            strcmp(name, "--seed") && strcmp(name, "--max-time") &&
+            strcmp(name, "--script") && strcmp(name, "--shot-dir") && strcmp(name, "--wav"))
             return fail(err, errlen, "unknown option '%s'", arg);
 
         if (!val)
         {
             if (i + 1 >= argc) return fail(err, errlen, "%s needs a value", name);
             val = argv[++i];
+        }
+
+        if (strcmp(name, "--script") == 0 || strcmp(name, "--shot-dir") == 0 ||
+            strcmp(name, "--wav") == 0)
+        {
+            if (val[0] == 0) return fail(err, errlen, "%s: empty value", name);
+            if (strcmp(name, "--script") == 0) out->script = val;
+            else if (strcmp(name, "--shot-dir") == 0) out->shot_dir = val;
+            else out->wav = val;
+            continue;
         }
 
         if (strcmp(name, "--scale") == 0)
@@ -134,7 +159,17 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
             if (v > (unsigned long long)limit)
                 return fail(err, errlen, "--max-time: '%s' is too large", val);
             out->max_time_ms = (long long)v;
+            out->max_time_set = 1;
         }
+    }
+
+    /* defaults and cross-checks, after all arguments (order does not matter) */
+    if (out->wav && !out->headless)
+        return fail(err, errlen, "--wav requires --headless");
+    if (out->headless)
+    {
+        if (!out->max_time_set) out->max_time_ms = 60000;
+        if (!out->seed_set) out->seed = 0;
     }
     return CLI_OK;
 }
