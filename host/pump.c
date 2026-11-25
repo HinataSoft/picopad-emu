@@ -37,6 +37,10 @@
 //    it and the mixer; real clock - run the ticks due by real time and the
 //    mixer. plat_tick >= 0 there becomes host_request_exit (no longjmp off the
 //    game thread); once an exit is pending the watchdog does nothing more.
+//    A fatal error inside the step (panic/FatalErrorStop from SysTick, alarm
+//    or mixer code) cannot longjmp to host_run_game from this thread: it
+//    unwinds the step instead (WdJmp, host_watchdog_unwind), releases the
+//    locks and requests exit code 1 (host_pending_exit tells the platform).
 //    Its own step does not count in PumpSeq; the episode lasts
 //    until PumpSeq moves again, with one step per call; the first step of an
 //    episode is logged ("stall: ..."). The watchdog acts only while a game is
@@ -64,6 +68,8 @@
 //    WdEpisode), so overlapping host_watchdog calls are harmless (the later
 //    one returns).
 
+#include <setjmp.h>
+
 #include "host_internal.h"
 #include "_sdk/inc/sdk_systick.h"		// SysTime, UnixTime, CurTimeMs, SYSTICK_MS
 #include "_lib/inc/lib_alarm.h"			// AlarmUpdate
@@ -79,6 +85,8 @@
 #define PUMP_FREE		0			// InPump values
 #define PUMP_GAME		1
 #define PUMP_WATCHDOG		2
+
+#define WD_FATAL		(-2)			// wd_step result: fatal error inside the step
 
 // system time (originally sdk_systick.c)
 volatile u32 SysTime;		// [ms], incremented every SYSTICK_MS
@@ -108,6 +116,7 @@ static unsigned int WdRun;		// RunId seen by the watchdog
 static unsigned int WdSeq;		// PumpSeq seen by the watchdog
 static unsigned long long WdTime;	// plat_now_us() when WdSeq/WdRun last changed
 static int WdEpisode;			// 1 = inside a stall episode (already stepped)
+static __thread jmp_buf* WdJmp;		// set while this thread runs a watchdog step
 
 int host_is_game_thread(void)
 {
@@ -158,6 +167,11 @@ static int irq_trylock(void)
 void host_request_exit(int code)
 {
 	__atomic_store_n(&PendingExit, code, __ATOMIC_SEQ_CST);
+}
+
+int host_pending_exit(void)
+{
+	return __atomic_load_n(&PendingExit, __ATOMIC_SEQ_CST);
 }
 
 void host_pump_clear_exit(void)
@@ -313,6 +327,36 @@ void host_pump(void)
 	}
 }
 
+// host_fatal off the game thread: inside a watchdog step, leave the step
+// (longjmp to wd_step); otherwise return
+void host_watchdog_unwind(void)
+{
+	jmp_buf* jb = WdJmp;
+	if (jb == NULL) return;
+	WdJmp = NULL;
+	longjmp(*jb, 1);
+}
+
+// watchdog step under the pump lock and the IRQ mutex: plat_tick result,
+// -1 or WD_FATAL (fatal error inside; the IRQ nesting it left is undone)
+static int wd_step(void)
+{
+	jmp_buf jb;
+	int rc;
+	if (setjmp(jb) != 0)
+	{
+		// unwound from host_fatal: SDK code may have left IRQ_LOCK nested
+		if (IrqDepth > 1) IrqDepth = 1;
+		return WD_FATAL;
+	}
+	WdJmp = &jb;
+	if (host_cfg()->virtual_clock)
+		host_clock_advance_to_next_tick(LastTick + PUMP_TICK_US);
+	rc = pump_step(host_now_us());
+	WdJmp = NULL;
+	return rc;
+}
+
 void host_watchdog(void)
 {
 	int expect = 0, logit = 0;
@@ -349,10 +393,9 @@ void host_watchdog(void)
 				__atomic_load_n(&PumpSeq, __ATOMIC_SEQ_CST) == seq &&
 				irq_trylock())
 			{
-				if (host_cfg()->virtual_clock)
-					host_clock_advance_to_next_tick(LastTick + PUMP_TICK_US);
-				int rc = pump_step(host_now_us());
-				if (rc >= 0) host_request_exit(rc);	// cannot longjmp here
+				int rc = wd_step();
+				if (rc == WD_FATAL) host_request_exit(1);	// message already logged
+				else if (rc >= 0) host_request_exit(rc);	// cannot longjmp here
 				host_irq_unlock();
 				__atomic_add_fetch(&StallCount, 1, __ATOMIC_SEQ_CST);
 				logit = !WdEpisode;

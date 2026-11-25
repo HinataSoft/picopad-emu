@@ -151,6 +151,7 @@ add_test(NAME script COMMAND test_script)
 picopad_add_game(KEYWAIT ${CMAKE_SOURCE_DIR}/tests/games/KEYWAIT)
 picopad_add_game(STALL ${CMAKE_SOURCE_DIR}/tests/games/STALL)
 picopad_add_game(HANG ${CMAKE_SOURCE_DIR}/tests/games/HANG)
+picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
 
 # picopad_headless_test(<name> <game target> <exit code> [ARGS ...] [STDOUT ...]
 #     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f]
@@ -197,6 +198,13 @@ picopad_headless_test(stall_headless STALL 0
 picopad_headless_test(hang_quit HANG 0
     ARGS --headless --script ${PICOPAD_HL_DIR}/hang.txt
     STDOUT "^end reason=quit t=300 code=0 stalls=[1-9][0-9]* pending=0$"
+    MAX_SECONDS 8)
+# panic v kroku hlidace (mixer na jinem vlakne): zadny pad, konec fatal/1,
+# i kdyz hra uz nikdy nezavola SDK (konci zabitim po HANG_KILL_MS)
+picopad_headless_test(watchdog_panic WDPANIC 1
+    ARGS --headless
+    STDOUT "^end reason=fatal t=[0-9]+ code=1 stalls=[1-9][0-9]* pending=0$"
+    STDERR "WDPANIC boom"
     MAX_SECONDS 8)
 picopad_headless_test(hello_headless HELLO 0
     ARGS --headless --script ${PICOPAD_HL_DIR}/hello.txt

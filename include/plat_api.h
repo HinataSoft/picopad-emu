@@ -38,6 +38,9 @@ unsigned long long host_now_us(void);     /* emulated device time (µs since sta
 void host_watchdog(void);                 /* from one non-game thread every ~20 ms: unsticks a game
                                              looping without SDK calls (see host/pump.c) */
 unsigned int host_stall_count(void);      /* watchdog interventions since host_run_game start */
+int  host_pending_exit(void);             /* exit code requested off the game thread (watchdog: plat_tick
+                                             end code, or 1 after a fatal error in a watchdog step)
+                                             and not yet honoured by a game pump; -1 = none */
 
 #ifdef __cplusplus
 }

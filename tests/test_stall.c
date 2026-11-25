@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "_sdk/inc/sdk_watchdog.h"
+#include "_sdk/inc/sdk_irq.h"
 #include "_lib/inc/lib_pwmsnd.h"
 
 #include "check.h"
@@ -13,15 +14,21 @@
 void* thr_start(void (*fn)(void*), void* arg);
 int thr_join(void* t, int timeout_ms);
 unsigned long long thr_ms(void);
+int host_is_game_thread(void);
+void PWMSndIrq(void);
 
 static u8 snd[4410]; /* 0.2 s @22050 Hz */
 
 static int run_mode;                /* 0 = stall + watchdog, 1 = idle advance (no watchdog),
-                                       2 = stall on the real clock, 3 = exit request from the watchdog */
+                                       2 = stall on the real clock, 3 = exit request from the watchdog,
+                                       4 = panic inside a watchdog step */
 static volatile int stall_loop_done;
 static volatile int helper_stop;
 static volatile int release_game;    /* mode 3: lets the stalled loop end */
 static volatile int exit_returned;   /* mode 3: plat_tick returned the exit code */
+static volatile int panic_calls;     /* mode 4: panics raised by the mixer handler */
+static volatile int pending_seen = -2; /* mode 4: host_pending_exit() after the panicking step */
+static volatile int logs_at_panic;   /* mode 4: fake_log_count after the panicking step */
 static unsigned int stalls_at_exit = 98, stalls_after = 99;
 static void* helper;
 static unsigned int idle_stalls = 99;
@@ -34,7 +41,23 @@ static void watchdog_thread(void* arg)
     (void)arg;
     while (!stall_loop_done && !helper_stop && thr_ms() - start < 5000) {
         __atomic_add_fetch(&fake_now, 20000, __ATOMIC_SEQ_CST);
-        host_watchdog();
+        {
+            int logs = fake_log_count;
+            host_watchdog();
+            if (run_mode == 4 && panic_calls > 0) {
+                /* the step that panicked returned normally and requested exit 1 */
+                pending_seen = host_pending_exit();
+                logs_at_panic = fake_log_count - logs;
+                stalls_at_exit = host_stall_count();
+                for (int i = 0; i < 20; i++) {
+                    __atomic_add_fetch(&fake_now, 20000, __ATOMIC_SEQ_CST);
+                    host_watchdog();
+                }
+                stalls_after = host_stall_count();
+                release_game = 1;
+                break;
+            }
+        }
         if (run_mode == 3 && exit_returned) {
             /* exit pending: further watchdog calls must not step the game */
             int i;
@@ -57,11 +80,22 @@ static int exit_tick_fn(unsigned long long t)
     return 9;
 }
 
+/* mode 4: the mixer panics when a watchdog step runs it */
+static void panic_handler(void)
+{
+    if (!host_is_game_thread()) {
+        panic_calls++;
+        panic("mixer panic %d", 7);
+    }
+    PWMSndIrq();
+}
+
 static void stall_game(void)
 {
     int i;
     for (i = 0; i < (int)sizeof(snd); i++) snd[i] = 0xC0;
     PlaySound(snd, sizeof(snd));                 /* 0.2 s */
+    if (run_mode == 4) SetHandler(IRQ_PWM_WRAP, panic_handler);
     helper = thr_start(watchdog_thread, 0);
     while (PlayingSound() && !release_game) {}   /* no SDK call that pumps */
     stall_loop_done = 1;
@@ -86,7 +120,7 @@ int host_call_game_main(void)
 {
     if (run_mode == 1) { idle_game(); return 0; }
     stall_game();
-    if (run_mode == 3) {
+    if (run_mode == 3 || run_mode == 4) {
         WaitMs(1);                               /* honours the exit requested by the watchdog */
         CHECK(0);                                /* not reached */
     }
@@ -138,6 +172,16 @@ int main(void)
     run_stall(3, 1, 9);
     fake_tick_fn = 0;
     CHECK(exit_returned);
+    CHECK(stalls_at_exit >= 1);
+    CHECK_EQ(stalls_after, stalls_at_exit);
+
+    /* panic inside a watchdog step (mixer handler off the game thread): no
+       trap; the step ends, exit 1 is requested and the game honours it at
+       its next pump; no more watchdog steps afterwards */
+    run_stall(4, 1, 1);
+    CHECK_EQ(panic_calls, 1);
+    CHECK_EQ(pending_seen, 1);
+    CHECK_EQ(logs_at_panic, 2);                  /* panic message, then the stall line */
     CHECK(stalls_at_exit >= 1);
     CHECK_EQ(stalls_after, stalls_at_exit);
 

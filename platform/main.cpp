@@ -56,6 +56,7 @@
 #define EVENT_WAIT_MS 5                    // main loop wake-up period
 #define NOVSYNC_FRAME_US 16000ull          // present interval without vsync
 #define WATCHDOG_MS 20                     // host_watchdog period
+#define PENDING_KILL_US 1000000ull         // real time for the game to honour a pending exit
 
 // ---------------------------------------------------------------------------
 // shared state
@@ -399,6 +400,7 @@ int main(int argc, char* argv[])
 	const unsigned long long start = plat_now_us();
 	const unsigned long long deadline = opt.max_time_ms ? start + (unsigned long long)opt.max_time_ms * 1000ull : 0;
 	unsigned long long last_present = 0;
+	unsigned long long pending_since = 0;   // real time an exit became pending (0 = none)
 	int redraw = 1;
 
 	for (;;)
@@ -463,6 +465,13 @@ int main(int argc, char* argv[])
 		}
 
 		if (done) finish(SDL_AtomicGet(&GameCode));
+		// exit requested off the game thread (fatal error in a watchdog step)
+		// but the game never pumps again: end it after PENDING_KILL_US
+		if (host_pending_exit() >= 0)
+		{
+			if (pending_since == 0) pending_since = now;
+			else if (now - pending_since >= PENDING_KILL_US) finish(host_pending_exit());
+		}
 		if (deadline != 0 && plat_now_us() >= deadline) finish(3);
 	}
 }

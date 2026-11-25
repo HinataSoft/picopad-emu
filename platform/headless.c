@@ -11,7 +11,9 @@
    When an end code was returned by plat_tick but the game thread does not
    finish within HANG_KILL_MS of real time (it loops without SDK calls, and
    the watchdog no longer steps once an exit is pending), the end line is
-   printed, the WAV closed and the process terminated with that code.
+   printed, the WAV closed and the process terminated with that code. The
+   same holds for an exit requested by the host without plat_tick (a fatal
+   error inside a watchdog step, host_pending_exit): end reason=fatal.
 
    Determinism: virtual time only; real time is used solely by the watchdog
    (stalls=N > 0 in the end line marks a best-effort run) and the hang kill.
@@ -292,7 +294,7 @@ int headless_run(const cli_options* opt, const char* game_name)
     while (!SDL_AtomicGet(&GameDone))
     {
         host_watchdog();   /* no-op unless the game loops without SDK calls */
-        if (SDL_AtomicGet(&EndSet) && !SDL_AtomicGet(&GameDone))
+        if ((SDL_AtomicGet(&EndSet) || host_pending_exit() >= 0) && !SDL_AtomicGet(&GameDone))
         {
             if (!end_seen_set)
             {
@@ -302,7 +304,10 @@ int headless_run(const cli_options* opt, const char* game_name)
             else if (SDL_GetTicks() - end_seen >= HANG_KILL_MS)
             {
                 /* the game thread hangs in a loop without SDK calls */
-                code = finish(EndReason, EndUs / 1000, EndCode);
+                if (SDL_AtomicGet(&EndSet))
+                    code = finish(EndReason, EndUs / 1000, EndCode);
+                else   /* fatal error in a watchdog step (host_pending_exit() == 1) */
+                    code = finish("fatal", host_now_us() / 1000, host_pending_exit());
                 fflush(stdout);
                 fflush(stderr);
                 TerminateProcess(GetCurrentProcess(), (UINT)code);

@@ -61,6 +61,10 @@ void host_pump_idle_reset(void);
 // running watchdog step; before host_pump_reset at the end)
 void host_pump_activate(int on);
 
+// host_fatal off the game thread: inside a host_watchdog step, unwind the
+// step (it then requests exit code 1); otherwise return
+void host_watchdog_unwind(void);
+
 // --- audio.c
 
 // under the pump lock (host_pump on the game thread, or a host_watchdog

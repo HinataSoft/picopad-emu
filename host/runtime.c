@@ -9,6 +9,9 @@
 // The game leaves through longjmp:
 //   ResetToBootLoader()       -> DeviceTerm(), exit code 0
 //   panic(), FatalErrorStop() -> plat_log(message), exit code 1
+//     (inside a host_watchdog step on the watchdog thread: the step is
+//     unwound and exit code 1 requested, the game ends at its next pump;
+//     the platform sees it with host_pending_exit if the game never pumps)
 // If game_main() returns (on the device the CPU would idle in an endless
 // loop), DeviceTerm() is called and the exit code is 0.
 
@@ -132,7 +135,8 @@ void host_fatal(const char* msg)
 {
 	plat_log(msg);
 	if (GameJmpValid && host_is_game_thread()) longjmp(GameJmp, JMP_FATAL);
-	__builtin_trap();	// not on the game thread: cannot unwind
+	host_watchdog_unwind();	// inside a watchdog step: leave the step
+	__builtin_trap();	// other thread: cannot unwind
 }
 
 void panic(const char* fmt, ...)
