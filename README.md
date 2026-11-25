@@ -22,7 +22,7 @@ Výsledná struktura:
 
 Pro build pro zařízení (`tools\build_device.ps1`, test `hello_device`) je navíc potřeba ARM GNU Toolchain (`arm-none-eabi-gcc`, ověřeno 14.2.Rel1) a Python 3.
 
-Cesty lze změnit cache proměnnými `PICOPAD_TOOLCHAIN_DIR` (výchozí `../toolchain`) a `PICOLIBSDK_DIR` (výchozí `../PicoLibSDK`).
+Cesty lze změnit cache proměnnými `PICOPAD_TOOLCHAIN_DIR` (výchozí `../toolchain`) a `PICOLIBSDK_DIR` (výchozí `../PicoLibSDK`); výchozí hodnoty se počítají od repa emulátoru, ne od projektu, který ho používá.
 
 ## Build
 
@@ -32,7 +32,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Preset `default` používá generátor Ninja a překladače z `../toolchain`. Výsledné exe jsou slinkované s `-static` (runtime MinGW včetně libwinpthread je uvnitř exe, SDL2 zůstává jako DLL) a po sestavení se vedle nich kopíruje `SDL2.dll`, takže běží bez MinGW v PATH. Hlídá to test `runtime_deps` (spouští `test_clock` s PATH jen na systémové adresáře Windows).
+Preset `default` používá generátor Ninja a toolchain soubor `cmake/toolchain-mingw32.cmake` (překladače a Ninja z `../toolchain`). Výsledné exe jsou slinkované s `-static` (runtime MinGW včetně libwinpthread je uvnitř exe, SDL2 zůstává jako DLL) a po sestavení se vedle nich kopíruje `SDL2.dll`, takže běží bez MinGW v PATH. Hlídá to test `runtime_deps` (spouští `test_clock` s PATH jen na systémové adresáře Windows).
 
 ## Spuštění hry (TETRIS)
 
@@ -135,6 +135,30 @@ C:\Progs\anaconda3\python.exe -I tools\uf2check.py examples\HELLO\HELLO.uf2
 ```
 
 Ověří UF2 bloky a rodinu čipu, značky PPAD/ppad v hlavičce aplikace a její CRC; vrací 0 při shodě, jinak 1. Test `hello_device` (label `device`) dělá obojí; bez ARM toolchainu se při configure neregistruje a jde vynechat i `ctest -LE device`. Výstupy buildu v `examples\HELLO` jsou v `.gitignore`.
+
+## Použití z jiného repa
+
+Hry generované mimo toto repo (např. sourozenecké repo `picopad-games`) se do emulátorových `.exe` překládají zahrnutím jediného souboru `cmake/PicopadEmu.cmake`. Minimální `CMakeLists.txt` cizího projektu:
+
+```cmake
+cmake_minimum_required(VERSION 3.21)
+project(mygames C CXX ASM)
+include(${PICOPAD_EMU_DIR}/cmake/PicopadEmu.cmake)
+picopad_add_game(HELLO games/HELLO)
+```
+
+Relativní cesta hry (a `config_dir` u `picopad_sdk_objects`) se bere od adresáře volajícího `CMakeLists.txt`. Každá hra vznikne jako `<jméno>.exe` s `SDL2.dll` vedle sebe (stejně jako `TETRIS.exe`). Configure a build:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=D:/Work/Prog/Picopad/picopad-emu/cmake/toolchain-mingw32.cmake -DPICOPAD_EMU_DIR=D:/Work/Prog/Picopad/picopad-emu
+cmake --build build
+```
+
+- `PICOPAD_EMU_DIR` – kořen repa picopad-emu; předává se příkazem `-D` (a v `CMakeLists.txt` cizího projektu se používá jen k `include`).
+- `PICOLIBSDK_DIR` – kořen PicoLibSDK, výchozí `<picopad-emu>/../PicoLibSDK`. SDK se nemění a nic se do něj nezapisuje.
+- `PICOPAD_TOOLCHAIN_DIR` – adresář s `mingw32/`, `ninja/` a `SDL2-<verze>/`, výchozí `<picopad-emu>/../toolchain`. Čte ho `toolchain-mingw32.cmake` (překladače, Ninja) i `PicopadEmu.cmake` (SDL2).
+
+Obě cesty (`PICOLIBSDK_DIR`, `PICOPAD_TOOLCHAIN_DIR`) jdou přepsat parametrem `-D` při configure. Opakované `include` `PicopadEmu.cmake` je neškodné. Funkčnost hlídá test `external_project` (label `slow`): `tests/external` je takový minimální cizí projekt, test ho nakonfiguruje do `build/external`, sestaví a spustí `HELLO.exe --headless --max-time 1s` s očekávaným kódem 3 (`ctest -LE slow` ho vynechá).
 
 ## Známá omezení
 

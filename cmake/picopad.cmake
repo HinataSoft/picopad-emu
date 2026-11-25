@@ -3,7 +3,7 @@
 #
 # picopad_sdk_objects(<target> <config_dir>)
 #   Vytvori OBJECT knihovnu <target> se zdroji SDK vyjmenovanymi nize.
-#   <config_dir> (relativne k CMAKE_SOURCE_DIR nebo absolutne) obsahuje
+#   <config_dir> (relativne k CMAKE_CURRENT_SOURCE_DIR volajiciho nebo absolutne) obsahuje
 #   config.h a include.h hry; je pridan do include cest spolu s PICOLIBSDK_DIR.
 #   Obsahuje i hostitelske zdroje PICOPAD_HOST_SOURCES (host/*.c, heap.S).
 #   Kazda C/C++ TU dostane -include host/host_prelude.h, ktery nahradi hardwarove
@@ -23,7 +23,7 @@
 
 set(PICOPAD_HOST_DIR "${CMAKE_CURRENT_LIST_DIR}/../host")
 get_filename_component(PICOPAD_HOST_DIR "${PICOPAD_HOST_DIR}" ABSOLUTE)
-get_filename_component(PICOPAD_SDK_ABS "${PICOLIBSDK_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+get_filename_component(PICOPAD_SDK_ABS "${PICOLIBSDK_DIR}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 
 # Prenositelne zdroje SDK (relativne k PICOLIBSDK_DIR)
 set(PICOPAD_SDK_SOURCES
@@ -86,7 +86,7 @@ set_source_files_properties("${PICOPAD_SDK_ABS}/_lib/src/lib_fat.c" PROPERTIES
 
 # Volby prekladu kodu SDK (viz Global Constraints)
 function(picopad_sdk_compile_options target config_dir)
-    get_filename_component(_cfg "${config_dir}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    get_filename_component(_cfg "${config_dir}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     target_include_directories(${target} PRIVATE "${_cfg}" "${PICOPAD_SDK_ABS}")
     target_compile_definitions(${target} PRIVATE
         RP2040=1
@@ -162,9 +162,24 @@ endfunction()
 include("${CMAKE_CURRENT_LIST_DIR}/parse_makefile.cmake")
 set(PICOPAD_PLATFORM_DIR "${CMAKE_CURRENT_LIST_DIR}/../platform")
 get_filename_component(PICOPAD_PLATFORM_DIR "${PICOPAD_PLATFORM_DIR}" ABSOLUTE)
+set(PICOPAD_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/../include")
+get_filename_component(PICOPAD_INCLUDE_DIR "${PICOPAD_INCLUDE_DIR}" ABSOLUTE)
+
+# Pure C platform libraries linked by every game exe (no SDL, no SDK); defined
+# here so that external projects get them too. Guarded: including twice is fine.
+if(NOT TARGET platform_png)
+    add_library(platform_png STATIC "${PICOPAD_PLATFORM_DIR}/png.c")
+endif()
+if(NOT TARGET platform_wav)
+    add_library(platform_wav STATIC "${PICOPAD_PLATFORM_DIR}/wav.c")
+endif()
+if(NOT TARGET platform_script)
+    add_library(platform_script STATIC "${PICOPAD_PLATFORM_DIR}/script.c")
+    target_include_directories(platform_script PUBLIC "${PICOPAD_PLATFORM_DIR}" "${PICOPAD_INCLUDE_DIR}")
+endif()
 
 function(picopad_add_game name game_dir)
-    get_filename_component(_dir "${game_dir}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    get_filename_component(_dir "${game_dir}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     set(_mk "${_dir}/Makefile")
     picopad_parse_makefile("${_mk}" _rel _asm)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_mk}")
@@ -196,7 +211,7 @@ function(picopad_add_game name game_dir)
         $<TARGET_OBJECTS:${name}_sdk>
     )
     target_compile_definitions(${name} PRIVATE "PICOPAD_GAME_NAME=\"${name}\"")
-    # platform_script/png/wav: pure C libraries defined in CMakeLists.txt
+    # platform_script/png/wav: pure C libraries defined above in this file
     target_link_libraries(${name} PRIVATE SDL2::SDL2main SDL2::SDL2 winmm
         platform_script platform_png platform_wav)
     picopad_exe_runtime(${name} SDL2)

@@ -4,30 +4,11 @@ project(picopad_emu C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-set(PICOPAD_TOOLCHAIN_DIR "${CMAKE_SOURCE_DIR}/../toolchain" CACHE PATH "Adresar s prenosnymi nastroji (SDL2, MinGW, Ninja)")
-set(PICOLIBSDK_DIR "${CMAKE_SOURCE_DIR}/../PicoLibSDK" CACHE PATH "Adresar PicoLibSDK")
-
-# SDL2 devel (mingw, i686); sdl2-config.cmake definuje SDL2::SDL2 a SDL2::SDL2main
-file(GLOB _sdl2_roots "${PICOPAD_TOOLCHAIN_DIR}/SDL2-*/i686-w64-mingw32")
-if(NOT _sdl2_roots)
-    message(FATAL_ERROR "SDL2 nenalezeno: chybi ${PICOPAD_TOOLCHAIN_DIR}/SDL2-<verze>/i686-w64-mingw32. "
-        "Stahnete SDL2-devel-2.32.10-mingw.zip (github.com/libsdl-org/SDL/releases) a rozbalte do "
-        "${PICOPAD_TOOLCHAIN_DIR} (viz README.md, sekce Toolchain), pripadne nastavte PICOPAD_TOOLCHAIN_DIR.")
-endif()
-list(SORT _sdl2_roots)
-list(REVERSE _sdl2_roots)
-list(GET _sdl2_roots 0 _sdl2_root)
-set(SDL2_DIR "${_sdl2_root}/lib/cmake/SDL2" CACHE PATH "SDL2 cmake config" FORCE)
-# exe jsou konzolove aplikace (bez -mwindows): hlasky na stderr, Ctrl+C a
-# navratovy kod funguji i z cmd
-set(SDL2_NO_MWINDOWS ON)
-find_package(SDL2 REQUIRED CONFIG)
+# PICOPAD_TOOLCHAIN_DIR, PICOLIBSDK_DIR, SDL2 a picopad.cmake (knihovny SDK,
+# picopad_add_game, platform_png/wav/script) - stejny vstup jako pro cizi repa
+include(cmake/PicopadEmu.cmake)
 
 enable_testing()
-
-# Prenositelne knihovny PicoLibSDK prelozene pro host; definuje i
-# picopad_exe_runtime() (staticke runtime MinGW, kopie SDL2.dll vedle exe)
-include(cmake/picopad.cmake)
 
 add_executable(test_toolchain tests/test_toolchain.c)
 target_include_directories(test_toolchain PRIVATE tests)
@@ -136,7 +117,6 @@ add_test(NAME runtime_deps
 set_tests_properties(runtime_deps PROPERTIES TIMEOUT 60)
 
 # Zapis PNG a WAV: cisty C bez SDL a SDK
-add_library(platform_png STATIC platform/png.c)
 add_executable(test_png tests/test_png.c)
 target_include_directories(test_png PRIVATE tests)
 target_link_libraries(test_png PRIVATE platform_png)
@@ -144,7 +124,6 @@ picopad_exe_runtime(test_png)
 add_test(NAME png COMMAND test_png)
 set_tests_properties(png PROPERTIES FIXTURES_SETUP png_files)
 
-add_library(platform_wav STATIC platform/wav.c)
 add_executable(test_wav tests/test_wav.c)
 target_include_directories(test_wav PRIVATE tests)
 target_link_libraries(test_wav PRIVATE platform_wav)
@@ -162,8 +141,6 @@ if(PICOPAD_PYTHON)
 endif()
 
 # Skript headless behu: parser a prehravac (cisty C)
-add_library(platform_script STATIC platform/script.c)
-target_include_directories(platform_script PUBLIC platform include)
 add_executable(test_script tests/test_script.c)
 target_include_directories(test_script PRIVATE tests)
 target_link_libraries(test_script PRIVATE platform_script)
@@ -247,3 +224,14 @@ add_test(NAME tetris_determinism
                  "-DSEED_SHOTS=game1;game2"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/determinism_test.cmake)
 set_tests_properties(tetris_determinism PROPERTIES TIMEOUT 120)
+
+# Cizi projekt (vzor picopad-games): tests/external zahrnuje PicopadEmu.cmake,
+# sestavi HELLO.exe do build/external a spusti ho headless (preklada SDK znovu,
+# proto label slow)
+add_test(NAME external_project
+         COMMAND ${CMAKE_COMMAND}
+                 -DEMU_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                 -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/external
+                 -DTOOLCHAIN_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain-mingw32.cmake
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_test.cmake)
+set_tests_properties(external_project PROPERTIES LABELS slow TIMEOUT 900)

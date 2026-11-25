@@ -7,11 +7,9 @@
       "displayName": "i686 MinGW + Ninja",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-mingw32.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "${sourceDir}/../toolchain/mingw32/bin/gcc.exe",
-        "CMAKE_CXX_COMPILER": "${sourceDir}/../toolchain/mingw32/bin/g++.exe",
-        "CMAKE_MAKE_PROGRAM": "${sourceDir}/../toolchain/ninja/ninja.exe"
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     }
   ]
