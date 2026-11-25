@@ -1,0 +1,21 @@
+# TETRIS determinism script: title (pause screen of the new game), start,
+# a few moves and rotations, drop, more moves; ~10 s of emulated time.
+# Keys are held 100 ms with gaps so the SDK debounce and the game polling see them.
+500   shot title
+1000  hold X 100
+1500  hold LEFT 100
+1800  hold LEFT 100
+2100  hold UP 100
+2500  hold RIGHT 100
+3000  hold DOWN 100
+4500  shot game1
+5000  hold RIGHT 100
+5300  hold RIGHT 100
+5600  hold UP 100
+6000  hold LEFT 100
+6500  hold DOWN 100
+8000  hold LEFT 100
+8300  hold UP 100
+8700  hold DOWN 100
+10000 shot game2
+10500 quit

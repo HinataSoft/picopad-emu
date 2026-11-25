@@ -233,3 +233,17 @@ picopad_headless_test(wav_headless KEYWAIT 0
     ARGS --headless --script ${PICOPAD_HL_DIR}/keywait_wav.txt --wav out.wav
     STDOUT "^end reason=exit t=[0-9]+ code=0 "
     WAV out.wav)
+
+# Akceptacni test milniku 2: TETRIS ve skriptovanem headless behu je bajtove
+# opakovatelny a shoduje se s referencnimi PNG (tests/ref/tetris_*.png);
+# jiny seed zmeni aspon jeden snimek rozehrane hry
+add_test(NAME tetris_determinism
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:TETRIS>
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/headless/tetris_determinism
+                 -DSCRIPT=${PICOPAD_HL_DIR}/tetris.txt
+                 -DREF_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/ref
+                 -DPREFIX=tetris
+                 "-DSHOTS=title;game1;game2"
+                 "-DSEED_SHOTS=game1;game2"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/determinism_test.cmake)
+set_tests_properties(tetris_determinism PROPERTIES TIMEOUT 120)
