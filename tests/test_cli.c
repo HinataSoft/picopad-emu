@@ -148,6 +148,22 @@ int main(void)
         char* argv[] = { "x.exe", "--wav", "a.wav", "--headless" };
         CHECK_EQ(parse(&o, err, 4, argv), CLI_OK);
     }
+    {   /* --script and --shot-dir need --headless too, in either order */
+        char* argv[] = { "x.exe", "--script", "s.txt" };
+        CHECK_EQ(parse(&o, err, 3, argv), CLI_ERROR);
+        CHECK(strstr(err, "--script") != NULL);
+        CHECK(strstr(err, "--headless") != NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--shot-dir=out" };
+        CHECK_EQ(parse(&o, err, 2, argv), CLI_ERROR);
+        CHECK(strstr(err, "--shot-dir") != NULL);
+        CHECK(strstr(err, "--headless") != NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--shot-dir", "out", "--script", "s.txt", "--headless" };
+        CHECK_EQ(parse(&o, err, 6, argv), CLI_OK);
+    }
     {
         char* argv[] = { "x.exe", "--headless", "--script" };
         CHECK_EQ(parse(&o, err, 3, argv), CLI_ERROR);

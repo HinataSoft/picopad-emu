@@ -34,7 +34,7 @@ typedef struct {
      --headless   --script FILE   --shot-dir DIR   --wav FILE   --trace-keys
    Headless defaults (resolved after parsing, option order does not matter):
    max_time_ms 60000 without --max-time, seed 0 without --seed (seed_set stays 0).
-   --wav requires --headless; --scale and --keys are accepted and ignored there.
+   --wav, --script and --shot-dir require --headless; --scale and --keys are accepted and ignored there.
    err receives a NUL-terminated message (at most errlen bytes). */
 int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen);
 

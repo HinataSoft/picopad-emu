@@ -16,8 +16,8 @@ static const char Usage[] =
     "  --seed N               random seed (default from time)\n"
     "  --max-time T           quit with exit code 3 after T (2000, 2000ms or 2s)\n"
     "  --headless             no window, virtual time, seed 0, --max-time 60s by default\n"
-    "  --script FILE          input script (headless)\n"
-    "  --shot-dir DIR         directory for screenshots (default .)\n"
+    "  --script FILE          input script (needs --headless)\n"
+    "  --shot-dir DIR         screenshot directory, default . (needs --headless)\n"
     "  --wav FILE             write audio to a WAV file (needs --headless)\n"
     "  --trace-keys           log key events\n"
     "  --help                 this text";
@@ -60,7 +60,7 @@ static unsigned int time_seed(void)
 
 int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
 {
-    int i;
+    int i, shot_dir_set = 0;
     if (err && errlen > 0) err[0] = 0;
 
     out->scale = 3;
@@ -123,7 +123,7 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
         {
             if (val[0] == 0) return fail(err, errlen, "%s: empty value", name);
             if (strcmp(name, "--script") == 0) out->script = val;
-            else if (strcmp(name, "--shot-dir") == 0) out->shot_dir = val;
+            else if (strcmp(name, "--shot-dir") == 0) { out->shot_dir = val; shot_dir_set = 1; }
             else out->wav = val;
             continue;
         }
@@ -166,6 +166,10 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
     /* defaults and cross-checks, after all arguments (order does not matter) */
     if (out->wav && !out->headless)
         return fail(err, errlen, "--wav requires --headless");
+    if (out->script && !out->headless)
+        return fail(err, errlen, "--script requires --headless");
+    if (shot_dir_set && !out->headless)
+        return fail(err, errlen, "--shot-dir requires --headless");
     if (out->headless)
     {
         if (!out->max_time_set) out->max_time_ms = 60000;
