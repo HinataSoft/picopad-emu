@@ -30,6 +30,7 @@ set(PICOPAD_SDK_SOURCES
     _font/font.c
     _lib/src/lib_calendar.c
     _lib/src/lib_calendar64.c
+    _lib/src/lib_config.c
     _lib/src/lib_color.c
     _lib/src/lib_crc.c
     _lib/src/lib_decnum.c
@@ -74,6 +75,8 @@ set(PICOPAD_HOST_SOURCES
     disp.c
     keys.c
     audio.c
+    config.c
+    libc_compat.c
 )
 
 # lib_fat.c: CheckApp() cte hlavicku aplikace primo z flash
@@ -83,6 +86,14 @@ set(PICOPAD_HOST_SOURCES
 # ktere hlasi "zadna aplikace". CheckLoaderData zustava (cte LoaderData[]).
 set_source_files_properties("${PICOPAD_SDK_ABS}/_lib/src/lib_fat.c" PROPERTIES
     COMPILE_DEFINITIONS "CheckApp=sdk_unused_CheckApp;CheckAppPath=sdk_unused_CheckAppPath;GetHomePath=sdk_unused_GetHomePath")
+
+# lib_config.c: ConfigLoad/ConfigSave/ConfigClear pracuji s flash (sektor
+# CONFIG_FLASH_OFF), coz na hostu nejde. V teto jedine TU se prejmenuji
+# (sdk_unused_*) a host/config.c definuje nahrady (konfigurace jen v pameti,
+# ConfigLoad = vychozi hodnoty). Zbytek (Config, ConfigSetDef, ConfigSetVolume)
+# zustava puvodni.
+set_source_files_properties("${PICOPAD_SDK_ABS}/_lib/src/lib_config.c" PROPERTIES
+    COMPILE_DEFINITIONS "ConfigLoad=sdk_unused_ConfigLoad;ConfigSave=sdk_unused_ConfigSave;ConfigClear=sdk_unused_ConfigClear")
 
 # Volby prekladu kodu SDK (viz Global Constraints)
 function(picopad_sdk_compile_options target config_dir)
@@ -98,7 +109,6 @@ function(picopad_sdk_compile_options target config_dir)
         "CONFIG_DEF_H=\"${PICOPAD_SDK_ABS}/config_def.h\""
         USE_FLOATLIBC=1
         USE_DOUBLELIBC=1
-        USE_CONFIG=0
         USE_CANVAS=0
         DRAW_HWINTER=0
         # global.h definuje uintptr_t/intptr_t jako (unsigned) long; MinGW crtdefs

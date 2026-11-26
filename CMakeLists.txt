@@ -152,6 +152,13 @@ picopad_add_game(KEYWAIT ${CMAKE_SOURCE_DIR}/tests/games/KEYWAIT)
 picopad_add_game(STALL ${CMAKE_SOURCE_DIR}/tests/games/STALL)
 picopad_add_game(HANG ${CMAKE_SOURCE_DIR}/tests/games/HANG)
 picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
+picopad_add_game(CFGSAVE ${CMAKE_SOURCE_DIR}/tests/games/CFGSAVE)
+
+# Hry z repa PicoLibSDK (zdrojaky beze zmen), ktere se musi prelozit a bezet
+picopad_add_game(T_TINYBERT ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/TINYBERT)
+picopad_add_game(T_INVADERS ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/INVADERS)
+picopad_add_game(G_ANTS ${PICOLIBSDK_DIR}/PicoPad/GAME/ANTS)
+picopad_add_game(G_MULTISET ${PICOLIBSDK_DIR}/PicoPad/GAME/MULTISET)
 
 # picopad_headless_test(<name> <game target> <exit code> [ARGS ...] [STDOUT ...]
 #     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f]
@@ -159,7 +166,7 @@ picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
 # runs tests/headless_test.cmake in its own directory build/headless/<name>
 set(PICOPAD_HL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/headless")
 function(picopad_headless_test name game expect)
-    cmake_parse_arguments(HT "" "MAKE_FILE;WAV;MAX_SECONDS" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
+    cmake_parse_arguments(HT "" "MAKE_FILE;WAV;MAX_SECONDS;COLORS" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
     set(_work "${CMAKE_CURRENT_BINARY_DIR}/headless/${name}")
     add_test(NAME ${name}
              COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${game}> -DEXPECT=${expect}
@@ -173,6 +180,9 @@ function(picopad_headless_test name game expect)
                      "-DMAKE_FILE=${HT_MAKE_FILE}"
                      "-DWAV=${HT_WAV}"
                      "-DMAX_SECONDS=${HT_MAX_SECONDS}"
+                     "-DCOLORS=${HT_COLORS}"
+                     "-DPYTHON=${PICOPAD_PYTHON}"
+                     "-DDECODE=${CMAKE_CURRENT_SOURCE_DIR}/tests/png_decode.py"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/headless_test.cmake)
     set_tests_properties(${name} PROPERTIES TIMEOUT 40)
 endfunction()
@@ -256,3 +266,18 @@ add_test(NAME external_project
                  -DPICOLIBSDK_DIR=${PICOLIBSDK_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_test.cmake)
 set_tests_properties(external_project PROPERTIES LABELS slow TIMEOUT 900)
+
+# Repo hry: 3 s snimek (ne jednobarevny) + quit v 4.5 s, kod 0
+foreach(_g T_TINYBERT T_INVADERS G_ANTS G_MULTISET)
+    picopad_headless_test(repo_smoke_${_g} ${_g} 0
+        ARGS --headless --script ${PICOPAD_HL_DIR}/smoke.txt
+        STDOUT "^end reason=quit "
+        EXIST smoke.png
+        COLORS smoke.png)
+    set_tests_properties(repo_smoke_${_g} PROPERTIES LABELS repo)
+endforeach()
+
+# ConfigSave() bez flash: zadny pad (hra konci pres ResetToBootLoader)
+picopad_headless_test(cfgsave CFGSAVE 0
+    ARGS --headless
+    STDOUT "^end reason=exit ")

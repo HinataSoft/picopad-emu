@@ -27,6 +27,7 @@
 #include "_lib/inc/lib_rand.h"			// RandSeed, RandInit
 #include "_lib/inc/lib_alarm.h"			// AlarmInit
 #include "_lib/inc/lib_malloc.h"		// MemInit
+#include "_lib/inc/lib_config.h"		// ConfigLoad
 #include "_devices/picopad/picopad_init.h"	// DeviceInit, DeviceTerm
 
 #define JMP_RESET	1	// longjmp code: ResetToBootLoader
@@ -71,6 +72,11 @@ void RuntimeInit(void)
 	RandInit();
 	RandSeed[1] += RandSeed[0];
 	RandSeed[0] += RoscRand();
+
+	// device configuration (defaults on the host; as sdk_runtime.c)
+#if USE_CONFIG
+	ConfigLoad();
+#endif
 
 	AlarmInit();
 

@@ -49,9 +49,15 @@
 #define AUDIO_ADJ_SAMPLES 32	// emulated samples per lead step of 1 sample (max drift ~3 %)
 #define AUDIO_ADJ_MAX_STEP 8	// max lead change per pump [frames]
 
-// sound output slice/channel chosen by PWMSndInit (lib_pwmsnd.c)
+// sound output slice/channel chosen by PWMSndInit (lib_pwmsnd.c, compiled
+// into the game only with USE_PWMSND; without it there is no PWM sound)
+#if USE_PWMSND
 extern int PWMSndSlice;
 extern int PWMSndChan;
+#else
+#define PWMSndSlice	(-1)
+#define PWMSndChan	(-1)
+#endif
 
 static void (* volatile irq_handlers[HOST_IRQ_MAX])(void);
 static volatile int pwm_enabled[HOST_PWM_SLICES];

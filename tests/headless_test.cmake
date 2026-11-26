@@ -10,6 +10,8 @@
 #   [-DCOMPARE=f;ref;f;ref]   pairs: file equal byte for byte to ref
 #   [-DWAV=f]                 WAV header sizes valid and sample count within
 #                             one tick (221 samples) of t*44.1 from the end line
+#   [-DCOLORS=f -DPYTHON=py -DDECODE=png_decode.py]
+#                             PNG f has at least 2 different colours (not blank)
 #   [-DMAX_SECONDS=n]         the run must take at most n seconds of real time
 if(NOT DEFINED EXE OR NOT DEFINED EXPECT OR NOT DEFINED WORK_DIR)
     message(FATAL_ERROR "usage: cmake -DEXE=... -DEXPECT=... -DWORK_DIR=... [...] -P headless_test.cmake")
@@ -132,6 +134,22 @@ if(WAV)
             if(_diff GREATER 221)
                 string(APPEND _fail "WAV has ${_samples} samples, expected ${_expect} +- 221\n")
             endif()
+        endif()
+    endif()
+endif()
+
+if(COLORS)
+    execute_process(COMMAND ${PYTHON} -I ${DECODE} --colors "${WORK_DIR}/${COLORS}"
+                    RESULT_VARIABLE _crc OUTPUT_VARIABLE _ncol ERROR_VARIABLE _cerr)
+    string(STRIP "${_ncol}" _ncol)
+    if(NOT _crc EQUAL 0)
+        string(APPEND _fail "png_decode.py --colors ${COLORS} failed: ${_cerr}
+")
+    else()
+        message(STATUS "${COLORS}: ${_ncol} colours")
+        if(_ncol LESS 2)
+            string(APPEND _fail "${COLORS} is a single-colour image
+")
         endif()
     endif()
 endif()

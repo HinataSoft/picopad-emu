@@ -2,6 +2,7 @@
 
   png_decode.py <png> <x> <y> <r> <g> <b> [<x> <y> <r> <g> <b> ...]
   png_decode.py --sample <png>     (320x240 vzorek z tests/test_png.c)
+  png_decode.py --colors <png>     vypise pocet ruznych barev snimku
 
 Dekoduje IDAT pres zlib (filtr 0 na kazdem radku), overuje CRC chunku a pixely.
 """
@@ -55,6 +56,10 @@ def main():
             exp = rgb(sample565(x, y))
             got = tuple(rows[y][3 * x:3 * x + 3])
             assert got == exp, "pixel %d,%d: %r != %r" % (x, y, got, exp)
+        return 0
+    if sys.argv[1] == "--colors":
+        w, h, rows = decode(sys.argv[2])
+        print(len({row[i:i + 3] for row in rows for i in range(0, 3 * w, 3)}))
         return 0
     w, h, rows = decode(sys.argv[1])
     v = [int(a) for a in sys.argv[2:]]

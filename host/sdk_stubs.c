@@ -24,6 +24,9 @@
 #include "_sdk/usb_inc/sdk_usb_host_hid.h"	// UsbKey*, UsbGetChar, UsbFlushKey
 #include "_lib/inc/lib_text.h"			// StrLen
 #include "_lib/inc/lib_fat.h"			// CheckApp, sAppPath, SetDir
+#include "_sdk/inc/sdk_flash.h"			// FLASH_ID_SIZE, FlashErase, FlashProgram
+#include "_sdk/inc/sdk_adc.h"			// ADC_Temp
+#include "_sdk/usb_inc/sdk_usbport.h"		// UsbPort* (USE_USBPORT)
 
 // ---------------------------------------------------------------------------
 // ROM function pointers (sdk_bootrom.c, RP2040)
@@ -197,3 +200,46 @@ int GetHomePath(char* path, const char* def)
 	SetDir(path);
 	return len;
 }
+
+// ---------------------------------------------------------------------------
+// flash (sdk_flash.c): info of a 2 MB chip; the game must not program it
+
+char FlashIDText[FLASH_ID_SIZE*2+1] = "E660000000000000";
+u32 FlashSize = 2*1024*1024;
+
+void FlashErase(u32 addr, u32 count)
+{
+	(void)addr; (void)count;
+	host_fatal("FlashErase: direct flash access is not supported by the emulator");
+}
+
+void FlashProgram(u32 addr, const u8* data, u32 count)
+{
+	(void)addr; (void)data; (void)count;
+	host_fatal("FlashProgram: direct flash access is not supported by the emulator");
+}
+
+// ---------------------------------------------------------------------------
+// ADC temperature sensor (sdk_adc.c): fixed 27 degrees Celsius
+
+float ADC_Temp(void)
+{
+	return 27.0f;
+}
+
+// ---------------------------------------------------------------------------
+// USB Mini-Port (USE_USBPORT, sdk_usbport.c): the opposite device is never
+// connected; sent packets are discarded, nothing is received
+
+#if USE_USBPORT
+
+u8 UsbPort = USBPORT_OFF;
+
+void UsbPortInit(u8 port) { UsbPort = port; host_pump(); }
+void UsbPortTerm() { UsbPort = USBPORT_OFF; host_pump(); }
+Bool UsbPortConnected() { host_pump(); return False; }
+Bool UsbPortSendReady() { host_pump(); return True; }
+Bool UsbPortSend(const void* pkt) { (void)pkt; host_pump(); return True; }
+Bool UsbPortRecv(void* pkt) { (void)pkt; host_pump(); return False; }
+
+#endif // USE_USBPORT

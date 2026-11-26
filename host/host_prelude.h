@@ -59,4 +59,14 @@
 #include "hw/host_adc.h"
 #include "hw/host_dma.h"
 
+// random() / srandom() are not in the MinGW CRT; host/libc_compat.c defines them
+#ifdef __cplusplus
+extern "C" {
+#endif
+long random(void);
+void srandom(unsigned int seed);
+#ifdef __cplusplus
+}
+#endif
+
 #endif // _HOST_PRELUDE_H
