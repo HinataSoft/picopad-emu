@@ -1,2 +1,3 @@
 # binary files: no end-of-line conversion (core.autocrlf=true)
 *.png binary
+tests/sd/** binary

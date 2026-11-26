@@ -161,6 +161,23 @@ cmake --build build
 
 Obě cesty (`PICOLIBSDK_DIR`, `PICOPAD_TOOLCHAIN_DIR`) jdou přepsat parametrem `-D` při configure. Opakované `include` `PicopadEmu.cmake` je neškodné. Funkčnost hlídá test `external_project` (label `slow`): `tests/external` je takový minimální cizí projekt, test ho nakonfiguruje do `build/external`, sestaví a spustí `HELLO.exe --headless --max-time 1s` s očekávaným kódem 3 (`ctest -LE slow` ho vynechá).
 
+## Obrazy SD karty (picopad-sdimg)
+
+`picopad-sdimg.exe` (bez SDL, statické MinGW runtime) formátuje a čte/zapisuje FAT obrazy SD karet výhradně přes `_lib/src/lib_fat.c` ze SDK, takže obraz je přesně to, co čte zařízení. Obraz je surový disk (sektory 512 B od offsetu 0, s MBR).
+
+```
+picopad-sdimg create IMG [--size MB] [--from DIR]   # výchozí 64 MB, max 4096; DIR se zkopíruje do kořene
+picopad-sdimg ls IMG [PATH]                         # řádky "D JMÉNO" / "F JMÉNO VELIKOST"
+picopad-sdimg get IMG PATH OUT                      # soubor z obrazu na disk
+picopad-sdimg put IMG PATH IN                       # soubor do obrazu (vytvoří, nebo přepíše)
+```
+
+Kódy: 0 v pořádku, 1 chyba operace (zpráva na stderr), 2 špatné argumenty. Cesty v obrazu používají `/`.
+
+- Dlouhá jména: `lib_fat` je nepodporuje (jen 8.3). `Disk_ExtractName()` by jméno mlčky ořízlo na 8 + 3 znaky, proto nástroj každé jméno předem ověří (max 8 znaků, tečka, max 3 znaky přípony, jen písmena, číslice a `!#$%&'()-@^_`{}~`; malá písmena `lib_fat` převede na velká). Jméno, které to nesplňuje (dlouhé, s diakritikou…), končí kódem 1 se jménem souboru ve zprávě a rozpracovaný obraz se smaže; soubor se nikdy tiše nevynechá ani nepřejmenuje (test `sdimg`).
+- Formátování: `DiskFormatDef()` na hostu padá na dělení nulou (`DiskFormat` s `clust = 0` začíná `mediasize / clust2`; RP2040 dělič vrací hodnotu, x86 vyvolá výjimku), proto nástroj volá `DiskFormat` s explicitním souborovým systémem a velikostí clusteru, které by zvolil automatický režim: FAT32 od 256 MB, jinak FAT16 (FAT12 pro obrazy do cca 2 MB).
+- Sestavení: `fat_ops.c` (strana SDK, implementuje `lib_sd` API `SDConnect`/`SDReadSect`/`SDWriteSect`/`SDMediaSize` nad souborem obrazu) a `lib_fat.c` + `lib_stream.c`; `host/sd.c` ani host vrstva se nelinkují. `main.c` je čisté C bez SDK hlaviček.
+
 ## Známá omezení
 
 - Herní smyčka bez volání SDK (čeká jen na `PlayingSound()` nebo jen čte paměť) se nezasekne: emulátor nemá přerušení, takže ji po 100 ms odblokuje hlídač a dál obsluhuje SysTick, klávesy a zvuk z vlastního vlákna (po 20 ms; v headless režimu po jednom ticku 5 ms, tj. asi 4× pomaleji než reálný čas – naměřeno 4,2× s `build\HANG.exe --headless --max-time 2s`: 390 kroků za 8,2 s) (týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET).

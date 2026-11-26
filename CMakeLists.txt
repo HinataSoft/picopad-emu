@@ -304,3 +304,23 @@ if(PICOPAD_PYTHON)
         WAV beep.wav
         TONE beep.wav 1000 2 8000)
 endif()
+
+# picopad-sdimg: formats and reads/writes FAT SD card images strictly through
+# the SDK's lib_fat.c. No SDL and no host layer (host/sd.c is NOT linked; the
+# lib_sd API is implemented in tools/sdimg/fat_ops.c over the image file).
+# SDK side (fat_ops.c + lib_fat.c, SDK options and host prelude) is an OBJECT
+# library; main.c (pure C, windows.h) is compiled without them.
+add_library(sdimg_sdk OBJECT tools/sdimg/fat_ops.c ${PICOPAD_SDK_ABS}/_lib/src/lib_fat.c
+    ${PICOPAD_SDK_ABS}/_lib/src/lib_stream.c)
+set_target_properties(sdimg_sdk PROPERTIES C_EXTENSIONS ON)
+picopad_sdk_compile_options(sdimg_sdk tools/sdimg)
+add_executable(picopad-sdimg tools/sdimg/main.c $<TARGET_OBJECTS:sdimg_sdk>)
+picopad_exe_runtime(picopad-sdimg)
+
+add_test(NAME sdimg
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:picopad-sdimg>
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sdimg
+                 -DSD_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/sd
+                 -DPYTHON=${PICOPAD_PYTHON}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdimg_test.cmake)
+set_tests_properties(sdimg PROPERTIES TIMEOUT 120)
