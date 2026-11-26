@@ -53,6 +53,7 @@ Volby (lze psát i jako `--volba=hodnota`):
 - `--max-time T` – po čase T skončí s kódem 3; T = `2000`, `2000ms` nebo `2s`
 - `--trace-keys` – při každé změně stavu kláves vypíše na stderr `keys t=<ms> bits=0x<hex>`
 - `--sd IMG` – obraz SD karty, viz [SD karta](#sd-karta---sd)
+- `--sddir DIR` – SD karta ze složky, viz [SD karta ze složky](#sd-karta-ze-složky---sddir)
 - `--headless`, `--script`, `--shot-dir`, `--wav` – běh bez okna, viz [Headless režim](#headless-režim)
 - `--help` – nápověda
 
@@ -70,7 +71,7 @@ Klávesy:
 
 Mapování `letters` se řídí popiskem klávesy podle aktivního rozložení klávesnice (na české QWERTZ funguje klávesa s popiskem Y). V rozložení `layout` se klávesy berou podle fyzické polohy (pozice A S / Z X na americké klávesnici, na QWERTZ tedy A S / Y X) a tvoří čtverec, který kopíruje fyzické rozmístění tlačítek X Y / A B na Picopadu.
 
-Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty (i neplatný obraz `--sd`); 3 = vypršel `--max-time`.
+Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty (i neplatný obraz `--sd` a neplatná složka `--sddir`); 3 = vypršel `--max-time`.
 
 ## Headless režim
 
@@ -195,6 +196,23 @@ build\picopad-sdimg.exe get card.img /TEST/OUT.TXT out.txt
 - Obraz s atributem jen pro čtení se otevře, ale zápisy selžou (`SDWriteSect` vrátí `False`, hra vidí chybu zápisu); běh dopadne jako obvykle.
 - `lib_fat` zná jen jména 8.3 (bez dlouhých jmen).
 - Test `sd_image` (hra `SDTEST`, `tests/sd_test.cmake`) hlídá čtení, zápis, všechny způsoby konce běhu, běh bez `--sd`, neplatné obrazy a obraz jen pro čtení; test `sd` jednotkově ověřuje `host/sd.c` nad falešnou platformou.
+
+### SD karta ze složky (--sddir)
+
+`--sddir DIR` (v okně i s `--headless`) dá hře SD kartu, jejímž obsahem je obyčejná složka DIR; co hra na kartě změní, je po ukončení emulátoru ve složce. Obraz karty vůbec není soubor: při startu se v paměti postaví řídký obraz FAT32 o velikosti 1 GiB z obsahu složky a hra nad ním běží se skutečnou `lib_fat`.
+
+```
+build\SDTEST.exe --headless --sddir moje_karta
+```
+
+- `--sd` a `--sddir` nejdou spolu (kód 2). Složka musí existovat a obsah se musí vejít do 1 GiB, jinak zpráva `<hra>: --sddir: …` na stderr a kód 2, hra se nespustí.
+- Jména musí být platná 8.3 (jako v `lib_fat`, malá písmena se uloží velkými). Soubor nebo složka s jiným jménem (dlouhé jméno, diakritika, mezera) se nenahraje, na stderr je varování `<hra>: --sddir: …` a synchronizace na ně (ani na nic pod nimi) nikdy nesáhne.
+- Při ukončení se obraz promítne zpět do složky, ať běh skončí jakkoli (hra sama, zavření okna, Ctrl+C, `quit`, `--max-time`, hlídací vlákno, fatální chyba), právě jednou. Herní vlákno se při tom na dalším přístupu ke kartě zablokuje. Pravidla: nový nebo změněný soubor (obsah, velikost nebo čas změny) se zapíše, soubor smazaný hrou se smaže (složka jen pokud je prázdná, jinak varování), nedotčené soubory se nepřepisují. Konflikt: soubor, který se ve složce od startu změnil (velikost nebo čas změny) a hra ho také změnila nebo smazala, zůstane ve verzi ze složky a vypíše se varování, vyhrává tedy složka. Chyba zápisu do složky je jen varování, kód ukončení se nemění.
+- Neuloží se, co hra drží jen v mezipaměti `lib_fat` (soubor bez `FileClose`/`DiskFlush`), stejně jako po vytažení karty ze zařízení. Zápis sektoru mimo soubory (např. vlastní oddíly) se do složky neprojeví.
+- Změny ve složce za běhu hra nevidí (obsah se čte jen při startu).
+- Čas změny se převádí na FAT datum a čas v místním čase (rozlišení 2 s); atributy (jen pro čtení, skrytý) se nepřenášejí.
+- Pro složitější práci (vlastní rozložení karty, nízkoúrovňové testy, více běhů nad jedním obrazem) použijte `--sd` s obrazem z `picopad-sdimg`.
+- Test `sd_dir` (hra `SDSYNC`, `tests/sddir_test.cmake`) hlídá synchronizaci při všech způsobech konce včetně `--max-time`, nedotčený soubor s dlouhým jménem a chyby argumentů.
 
 ## Pokrytí repa (tools/coverage)
 

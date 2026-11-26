@@ -36,6 +36,7 @@
 #include "../include/plat_api.h"
 #include "headless.h"
 #include "png.h"
+#include "sdcard.h"
 #include "script.h"
 #include "wav.h"
 
@@ -315,6 +316,7 @@ int headless_run(const cli_options* opt, const char* game_name)
                 else   /* fatal error in a watchdog step (host_pending_exit() == 1) */
                     code = finish("fatal", host_now_us() / 1000, host_pending_exit());
                 fflush(stdout);
+                sdcard_shutdown();   /* sync --sddir / close --sd; the hung game thread blocks at its next card access */
                 fflush(stderr);
                 TerminateProcess(GetCurrentProcess(), (UINT)code);
                 ExitProcess((UINT)code);   /* not reached */

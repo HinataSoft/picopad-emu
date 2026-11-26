@@ -22,6 +22,7 @@ typedef struct {
     const char* wav;           /* --wav file (points into argv), NULL = none; needs headless */
     int trace_keys;            /* 1 = --trace-keys */
     const char* sd;            /* --sd image file (points into argv), NULL = no card */
+    const char* sddir;         /* --sddir DIR (points into argv), NULL = none; excludes --sd */
 } cli_options;
 
 /* return values of cli_parse */
@@ -34,6 +35,7 @@ typedef struct {
      --max-time T   (T = 2000, 2000ms or 2s)
      --headless   --script FILE   --shot-dir DIR   --wav FILE   --trace-keys
      --sd FILE   (SD card image; valid with and without --headless)
+     --sddir DIR   (SD card served from a host directory; excludes --sd)
    Headless defaults (resolved after parsing, option order does not matter):
    max_time_ms 60000 without --max-time, seed 0 without --seed (seed_set stays 0).
    --wav, --script and --shot-dir require --headless; --scale and --keys are accepted and ignored there.

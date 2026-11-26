@@ -41,6 +41,7 @@
 #include "cli.h"
 #include "headless.h"
 #include "keymap.h"
+#include "sdcard.h"
 #include "sdimage.h"
 
 #ifndef PICOPAD_GAME_NAME
@@ -161,10 +162,10 @@ extern "C" int plat_tick(unsigned long long t_us)
 	return -1;
 }
 
-// SD card image (--sd, window and headless): every write is flushed to the file at once
-extern "C" unsigned int plat_sd_sectors(void) { return sdimage_sectors(); }
-extern "C" int plat_sd_read(unsigned int sector, unsigned char* buf512) { return sdimage_read(sector, buf512); }
-extern "C" int plat_sd_write(unsigned int sector, const unsigned char* buf512) { return sdimage_write(sector, buf512); }
+// SD card (--sd image file or --sddir directory, window and headless): platform/sdcard.c
+extern "C" unsigned int plat_sd_sectors(void) { return sdcard_sectors(); }
+extern "C" int plat_sd_read(unsigned int sector, unsigned char* buf512) { return sdcard_read(sector, buf512); }
+extern "C" int plat_sd_write(unsigned int sector, const unsigned char* buf512) { return sdcard_write(sector, buf512); }
 
 extern "C" void plat_log(const char* msg)
 {
@@ -291,9 +292,14 @@ static void finish(int code)
 		if (WatchdogThread != NULL) SDL_WaitThread(WatchdogThread, NULL);   // sees GameDone within WATCHDOG_MS
 		SDL_Quit();
 		timeEndPeriod(1);
-		sdimage_close();
+		sdcard_shutdown();
+		fflush(stderr);
 		exit(code);
 	}
+	// the game thread is still running: sync/close the card (the game thread then blocks at
+	// its next card access), then terminate
+	sdcard_shutdown();
+	fflush(stderr);
 	TerminateProcess(GetCurrentProcess(), (UINT)code);
 	ExitProcess((UINT)code);   // not reached
 }
@@ -308,6 +314,7 @@ static BOOL WINAPI console_handler(DWORD type)
 	e.type = SDL_QUIT;
 	SDL_PushEvent(&e);
 	Sleep(1000);
+	sdcard_shutdown();   // waits for a shutdown already started by the main thread
 	fflush(stdout);
 	fflush(stderr);
 	TerminateProcess(GetCurrentProcess(), 0);
@@ -336,10 +343,16 @@ int main(int argc, char* argv[])
 	TraceKeys = opt.trace_keys;
 	LogMutex = SDL_CreateMutex();   // SDL mutexes work without SDL_Init
 
-	// SD card image (window and headless): a bad image is an argument error
-	if (opt.sd != NULL && sdimage_open(opt.sd, err, (int)sizeof(err)) != 0)
+	// SD card (window and headless): a bad image or directory is an argument error; the card
+	// is ready before the window and before the game thread start
+	if (opt.sd != NULL && sdcard_open_image(opt.sd, err, (int)sizeof(err)) != 0)
 	{
 		fprintf(stderr, "%s: --sd: %s\n", PICOPAD_GAME_NAME, err);
+		return 2;
+	}
+	if (opt.sddir != NULL && sdcard_open_dir(opt.sddir, PICOPAD_GAME_NAME, err, (int)sizeof(err)) != 0)
+	{
+		fprintf(stderr, "%s: --sddir: %s\n", PICOPAD_GAME_NAME, err);
 		return 2;
 	}
 	if (opt.sd != NULL && sdimage_read_only())
@@ -352,7 +365,7 @@ int main(int argc, char* argv[])
 	{
 		Headless = 1;
 		int code = headless_run(&opt, PICOPAD_GAME_NAME);
-		sdimage_close();
+		sdcard_shutdown();
 		fflush(stdout);
 		fflush(stderr);
 		return code;

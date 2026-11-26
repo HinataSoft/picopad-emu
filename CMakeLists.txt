@@ -177,6 +177,7 @@ picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
 picopad_add_game(CFGSAVE ${CMAKE_SOURCE_DIR}/tests/games/CFGSAVE)
 picopad_add_game(BEEP ${CMAKE_SOURCE_DIR}/tests/games/BEEP)
 picopad_add_game(SDTEST ${CMAKE_SOURCE_DIR}/tests/games/SDTEST)
+picopad_add_game(SDSYNC ${CMAKE_SOURCE_DIR}/tests/games/SDSYNC)
 
 # Hry z repa PicoLibSDK (zdrojaky beze zmen), ktere se musi prelozit a bezet
 picopad_add_game(T_TINYBERT ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/TINYBERT)
@@ -378,6 +379,14 @@ add_test(NAME sd_image
                  -DPICOPAD_HL_DIR=${PICOPAD_HL_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sd_test.cmake)
 set_tests_properties(sd_image PROPERTIES TIMEOUT 180)
+
+# --sddir: SDSYNC cte /DATA/IN.TXT ze slozky, zapise, zmeni a smaze soubory; po behu
+# (konec hrou, quit, --max-time) musi slozka odpovidat; ne-8.3 soubor zustane; chyby argumentu
+add_test(NAME sd_dir
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:SDSYNC>
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sddir
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sddir_test.cmake)
+set_tests_properties(sd_dir PROPERTIES TIMEOUT 180)
 
 # Pokryti repa: tools/coverage/run.cmake postavi vsech 41 her z PicoLibSDK
 # (ninja -k 0), kazdou spusti headless se smoke.txt a zapise build/coverage/summary.md.

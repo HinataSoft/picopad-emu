@@ -113,6 +113,35 @@ int main(void)
         CHECK_EQ(parse(&o, err, 2, argv), CLI_ERROR);
         CHECK(strstr(err, "--sd") != NULL);
     }
+    /* --sddir DIR, --sddir=DIR; excludes --sd */
+    {
+        char* argv[] = { "x.exe", "--sddir", "d" };
+        CHECK_EQ(parse(&o, err, 3, argv), CLI_OK);
+        CHECK(o.sddir != NULL && strcmp(o.sddir, "d") == 0);
+        CHECK(o.sd == NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--headless", "--sddir=my dir" };
+        CHECK_EQ(parse(&o, err, 3, argv), CLI_OK);
+        CHECK(o.sddir != NULL && strcmp(o.sddir, "my dir") == 0);
+        CHECK_EQ(o.headless, 1);
+    }
+    {
+        char* argv[] = { "x.exe" };
+        CHECK_EQ(parse(&o, err, 1, argv), CLI_OK);
+        CHECK(o.sddir == NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--sddir=" };   /* empty value */
+        CHECK_EQ(parse(&o, err, 2, argv), CLI_ERROR);
+        CHECK(strstr(err, "--sddir") != NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--sd", "a.img", "--sddir", "d" };
+        CHECK_EQ(parse(&o, err, 5, argv), CLI_ERROR);
+        CHECK(strstr(err, "--sddir") != NULL);
+    }
+    CHECK(strstr(cli_usage(), "--sddir") != NULL);
     /* headless defaults */
     {
         char* argv[] = { "x.exe" };
