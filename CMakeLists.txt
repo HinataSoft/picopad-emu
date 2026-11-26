@@ -145,6 +145,13 @@ target_link_libraries(test_fatvol PRIVATE platform_fatvol platform_sparsedisk)
 picopad_exe_runtime(test_fatvol)
 add_test(NAME fatvol COMMAND test_fatvol)
 
+# Import slozky do FAT obrazu a synchronizace zpet (--sddir): windows.h, bez SDL a SDK
+add_executable(test_sddir tests/test_sddir.c)
+target_include_directories(test_sddir PRIVATE tests)
+target_link_libraries(test_sddir PRIVATE platform_sddir platform_fatvol platform_sparsedisk)
+picopad_exe_runtime(test_sddir)
+add_test(NAME sddir COMMAND test_sddir ${CMAKE_CURRENT_BINARY_DIR}/sddir_unit)
+
 # Dekodovani PNG pres zlib (test png zapise soubory do build adresare)
 if(PICOPAD_PYTHON)
     add_test(NAME png_decode
@@ -349,6 +356,17 @@ add_test(NAME sdimg
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdimg_test.cmake)
 set_tests_properties(sdimg PROPERTIES TIMEOUT 120)
 endif()
+
+# sddir_tool: build (slozka -> obraz do souboru) a export (obraz -> slozka); krizovy test s lib_fat
+add_executable(sddir_tool tests/sddir_tool.c)
+target_link_libraries(sddir_tool PRIVATE platform_sddir platform_fatvol platform_sparsedisk)
+picopad_exe_runtime(sddir_tool)
+add_test(NAME sddir_cross
+         COMMAND ${CMAKE_COMMAND} -DTOOL=$<TARGET_FILE:sddir_tool>
+                 -DSDIMG=$<TARGET_FILE:picopad-sdimg>
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sddir_cross
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sddir_cross.cmake)
+set_tests_properties(sddir_cross PROPERTIES TIMEOUT 180)
 
 # --sd: SDTEST cte /TEST/IN.TXT z obrazu karty a zapise /TEST/OUT.TXT; konce
 # behu (exit, quit, --max-time), bez --sd, neplatne obrazy, obraz jen pro cteni
