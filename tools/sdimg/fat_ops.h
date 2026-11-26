@@ -14,7 +14,7 @@ int img_write(unsigned sector, const unsigned char* buf);/* 0 = ok */
 
 /* ---- provided by fat_ops.c; all return 0 = ok, otherwise a message in fo_error() ---- */
 const char* fo_error(void);
-int fo_format(void);                       /* DiskFormatDef + mount */
+int fo_format(void);                       /* DiskFormat (explicit fs and cluster size) + mount */
 int fo_mount(void);
 int fo_unmount(void);                      /* flushes */
 int fo_check_name(const char* path);       /* every segment is a valid 8.3 name */

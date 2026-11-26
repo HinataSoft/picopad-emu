@@ -104,7 +104,6 @@ int fo_format(void)
 	// sectors, halved until DiskFormat accepts the cluster count), otherwise
 	// FAT16 (8 sectors, halved), and FAT12 with 1-sector clusters for images
 	// FAT16 cannot fill.
-	u8 fs;
 	u8 clust;
 	if (img_sectors() >= 256u * 1024u * 2u)
 	{
@@ -113,8 +112,7 @@ int fo_format(void)
 	}
 	for (clust = 8; clust > 0; clust >>= 1)
 		if (DiskFormat(FS_FAT16, clust, True, FORMAT_MAGIC)) return fo_mount();
-	fs = FS_FAT12;
-	if (DiskFormat(fs, 1, True, FORMAT_MAGIC)) return fo_mount();
+	if (DiskFormat(FS_FAT12, 1, True, FORMAT_MAGIC)) return fo_mount();
 	return fail("DiskFormat failed (image too small or I/O error)");
 }
 

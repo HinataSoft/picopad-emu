@@ -342,6 +342,11 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "%s: --sd: %s\n", PICOPAD_GAME_NAME, err);
 		return 2;
 	}
+	if (opt.sd != NULL && sdimage_read_only())
+	{
+		fprintf(stderr, "%s: --sd: '%s' opened read-only, writes will fail\n", PICOPAD_GAME_NAME, opt.sd);
+		fflush(stderr);
+	}
 
 	if (opt.headless)
 	{

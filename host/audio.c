@@ -273,9 +273,10 @@ void host_audio_reset(void)
 	produced = 0;
 	lead = AUDIO_TARGET;
 	adj_base = 0;
-	// after DeviceInit (PWMSndInit leaves the slice disabled): GPIO sound
-	// until the game enables it
-	pwm_snd_used = PWMSndSlice >= 0 && PWMSndSlice < HOST_PWM_SLICES && pwm_enabled[PWMSndSlice];
+	// called before RuntimeInit/DeviceInit: per-run PWM state starts clean, so
+	// GPIO sound is used until the game enables the sound slice (PWM_Enable)
+	for (int i = 0; i < HOST_PWM_SLICES; i++) pwm_enabled[i] = 0;
+	pwm_snd_used = 0;
 	gpio_level = 0;
 	gpio_idx = 0;
 	gpio_seg = 0;

@@ -11,6 +11,7 @@ extern "C" {
 
 #define SDIMAGE_SECTOR 512
 #define SDIMAGE_MIN_BYTES (64ull * 1024)
+#define SDIMAGE_MAX_BYTES (4ull * 1024 * 1024 * 1024)
 
 /* Opens the image (read-write; read-only if the file is read-only: writes then
    fail). Returns 0 and no message, or -1 and a one-line message in err (does
@@ -20,6 +21,9 @@ int sdimage_open(const char* path, char* err, int errlen);
 
 /* closes the image (no-op when none is open); the card is then "not inserted" */
 void sdimage_close(void);
+
+/* 1 = the open image could only be opened read-only (writes fail) */
+int sdimage_read_only(void);
 
 /* number of sectors, 0 = no image */
 unsigned int sdimage_sectors(void);

@@ -51,8 +51,8 @@ int sdimage_open(const char* path, char* err, int errlen)
     if (size < SDIMAGE_MIN_BYTES)
         return fail(err, errlen, "SD image '%s': size %lld bytes is below the minimum of 64 KiB (65536 bytes)",
                     path, (long long)size);
-    if (size / SDIMAGE_SECTOR > 0xFFFFFFF0ull)
-        return fail(err, errlen, "SD image '%s': size %lld bytes is too large (at most 2 TiB)", path, (long long)size);
+    if (size > SDIMAGE_MAX_BYTES)
+        return fail(err, errlen, "SD image '%s': size %lld bytes is too large (at most 4 GiB)", path, (long long)size);
 
     f = fopen(path, "r+b");
     if (!f)
@@ -66,6 +66,11 @@ int sdimage_open(const char* path, char* err, int errlen)
     ReadOnly = ro;
     Sectors = (unsigned int)(size / SDIMAGE_SECTOR);
     return 0;
+}
+
+int sdimage_read_only(void)
+{
+    return Img != NULL && ReadOnly;
 }
 
 unsigned int sdimage_sectors(void)

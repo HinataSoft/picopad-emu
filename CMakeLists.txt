@@ -44,7 +44,7 @@ picopad_host_test(tick)
 picopad_host_test(sd)
 # audio test uses a helper thread (windows.h kept out of the SDK-including TU)
 target_sources(test_audio PRIVATE tests/thread_helper.c)
-set_tests_properties(audio PROPERTIES TIMEOUT 30)
+set_tests_properties(audio PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)  # wall-clock waitus1_realtime check
 # tick test uses a helper thread for host_request_exit
 target_sources(test_tick PRIVATE tests/thread_helper.c)
 set_tests_properties(tick PROPERTIES TIMEOUT 30)
@@ -273,7 +273,13 @@ add_test(NAME external_project
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_test.cmake)
 set_tests_properties(external_project PROPERTIES LABELS slow TIMEOUT 900)
 
-# Repo hry: 3 s snimek (ne jednobarevny) + quit v 4.5 s, kod 0
+# Repo hry: 3 s snimek (ne jednobarevny, kontrola barev pres Python) + quit v 4.5 s, kod 0.
+# Testy co potrebuji Python (repo_smoke_*, beep_wav, sdimg, png_decode, hello_device)
+# se bez nej neregistruji (hlaska pri configure).
+if(NOT PICOPAD_PYTHON)
+    message(STATUS "python not found: repo_smoke_*, beep_wav, sdimg and png_decode tests not registered")
+endif()
+if(PICOPAD_PYTHON)
 foreach(_g T_TINYBERT T_INVADERS G_ANTS G_MULTISET)
     picopad_headless_test(repo_smoke_${_g} ${_g} 0
         ARGS --headless --script ${PICOPAD_HL_DIR}/smoke.txt
@@ -290,6 +296,7 @@ picopad_headless_test(repo_smoke_T_AMANIA T_AMANIA 0
     EXIST smoke.png
     COLORS smoke.png)
 set_tests_properties(repo_smoke_T_AMANIA PROPERTIES LABELS repo)
+endif()
 
 # ConfigSave()/ConfigLoad() v pameti: hra si overi hodnotu sama; pri neshode
 # visi a skonci --max-time (kod 3), pri shode ResetToBootLoader (kod 0)
@@ -319,6 +326,7 @@ picopad_sdk_compile_options(sdimg_sdk tools/sdimg)
 add_executable(picopad-sdimg tools/sdimg/main.c $<TARGET_OBJECTS:sdimg_sdk>)
 picopad_exe_runtime(picopad-sdimg)
 
+if(PICOPAD_PYTHON)
 add_test(NAME sdimg
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:picopad-sdimg>
                  -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sdimg
@@ -326,6 +334,7 @@ add_test(NAME sdimg
                  -DPYTHON=${PICOPAD_PYTHON}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdimg_test.cmake)
 set_tests_properties(sdimg PROPERTIES TIMEOUT 120)
+endif()
 
 # --sd: SDTEST cte /TEST/IN.TXT z obrazu karty a zapise /TEST/OUT.TXT; konce
 # behu (exit, quit, --max-time), bez --sd, neplatne obrazy, obraz jen pro cteni
@@ -342,6 +351,9 @@ set_tests_properties(sd_image PROPERTIES TIMEOUT 180)
 # (ninja -k 0), kazdou spusti headless se smoke.txt a zapise build/coverage/summary.md.
 # Dlouhe (preklada SDK 41x), proto jen s -DPICOPAD_COVERAGE=ON.
 option(PICOPAD_COVERAGE "Register the repo_coverage test (builds all 41 PicoLibSDK games)" OFF)
+if(PICOPAD_COVERAGE AND NOT PICOPAD_PYTHON)
+    message(WARNING "PICOPAD_COVERAGE=ON but python was not found: repo_coverage test not registered")
+endif()
 if(PICOPAD_COVERAGE AND PICOPAD_PYTHON)
     add_test(NAME repo_coverage
              COMMAND ${CMAKE_COMMAND}
