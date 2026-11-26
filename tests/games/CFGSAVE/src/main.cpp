@@ -1,31 +1,43 @@
 // ****************************************************************************
 //
-//   CFGSAVE - headless test game: ConfigSave() must not crash (no flash)
+//   CFGSAVE - headless test game: ConfigSave()/ConfigLoad() round trip
 //
 // ****************************************************************************
-// ConfigSetVolume(50); ConfigSave(); ConfigLoad(); then Config.volume is shown
-// as text on the display, one second wait, ResetToBootLoader().
+// Checks (in memory, no flash): the first ConfigLoad() gives the default
+// volume, ConfigSave() followed by a volume change and ConfigLoad() restores
+// the saved value. Success: ResetToBootLoader() (exit code 0). Mismatch: the
+// game hangs, so the headless run ends with --max-time (exit code 3).
 
 #include "../include.h"
 
+#define SAVED_LEVEL	7	// ConfigSetVolume level, kept unchanged (7*10 = 70 <= 255)
+#define OTHER_LEVEL	3
+
+static void Fail()
+{
+	DrawClear();
+	DrawText2("MISMATCH", 20, 20, COL_RED);
+	DispUpdate();
+	while (True) WaitMs(10);
+}
+
 int main()
 {
-	char buf[16];
-	int i = 0, n, d;
-
-	ConfigSetVolume(50);
-	ConfigSave();
+	// before any save: defaults
 	ConfigLoad();
+	if (Config.volume != CONFIG_VOLUME_FULLSTEP) Fail();
 
-	// Config.volume as decimal text (no printf dependency)
-	n = Config.volume;
-	for (d = 100; d > 0; d /= 10)
-		if ((n >= d) || (i > 0) || (d == 1)) { buf[i++] = (char)('0' + (n / d) % 10); }
-	buf[i] = 0;
+	ConfigSetVolume(SAVED_LEVEL);
+	if (Config.volume != SAVED_LEVEL*CONFIG_VOLUME_STEP) Fail();
+	ConfigSave();
+
+	ConfigSetVolume(OTHER_LEVEL);
+	if (Config.volume != OTHER_LEVEL*CONFIG_VOLUME_STEP) Fail();
+	ConfigLoad();
+	if (Config.volume != SAVED_LEVEL*CONFIG_VOLUME_STEP) Fail();
 
 	DrawClear();
-	DrawText2("VOLUME", 20, 20, COL_WHITE);
-	DrawText2(buf, 20, 60, COL_YELLOW);
+	DrawText2("CONFIG OK", 20, 20, COL_GREEN);
 	DispUpdate();
 	WaitMs(1000);
 	ResetToBootLoader();

@@ -277,7 +277,8 @@ foreach(_g T_TINYBERT T_INVADERS G_ANTS G_MULTISET)
     set_tests_properties(repo_smoke_${_g} PROPERTIES LABELS repo)
 endforeach()
 
-# ConfigSave() bez flash: zadny pad (hra konci pres ResetToBootLoader)
+# ConfigSave()/ConfigLoad() v pameti: hra si overi hodnotu sama; pri neshode
+# visi a skonci --max-time (kod 3), pri shode ResetToBootLoader (kod 0)
 picopad_headless_test(cfgsave CFGSAVE 0
-    ARGS --headless
+    ARGS --headless --max-time 5s
     STDOUT "^end reason=exit ")
