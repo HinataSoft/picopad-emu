@@ -131,6 +131,13 @@ target_link_libraries(test_wav PRIVATE platform_wav)
 picopad_exe_runtime(test_wav)
 add_test(NAME wav COMMAND test_wav)
 
+# Radove sektorove uloziste pro --sddir: cisty C bez SDL a SDK
+add_executable(test_sparsedisk tests/test_sparsedisk.c)
+target_include_directories(test_sparsedisk PRIVATE tests)
+target_link_libraries(test_sparsedisk PRIVATE platform_sparsedisk)
+picopad_exe_runtime(test_sparsedisk)
+add_test(NAME sparsedisk COMMAND test_sparsedisk)
+
 # Dekodovani PNG pres zlib (test png zapise soubory do build adresare)
 if(PICOPAD_PYTHON)
     add_test(NAME png_decode
