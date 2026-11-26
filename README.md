@@ -196,6 +196,16 @@ build\picopad-sdimg.exe get card.img /TEST/OUT.TXT out.txt
 - `lib_fat` zná jen jména 8.3 (bez dlouhých jmen).
 - Test `sd_image` (hra `SDTEST`, `tests/sd_test.cmake`) hlídá čtení, zápis, všechny způsoby konce běhu, běh bez `--sd`, neplatné obrazy a obraz jen pro čtení; test `sd` jednotkově ověřuje `host/sd.c` nad falešnou platformou.
 
+## Pokrytí repa (tools/coverage)
+
+`tools/coverage` je cizí projekt přes `PicopadEmu.cmake`: ke každému adresáři `PicoPad/GAME/*` a `PicoPad/TINYGAME/*` s `Makefile` přidá cíl `G_<DIR>` / `T_<DIR>` (41 her). Runner postaví všechny s `ninja -k 0` (selhání jedné hry ostatní nezastaví), každé exe spustí headless se `tools/coverage/smoke.txt` (snímek ve 3 s, `quit` ve 4,5 s, vnější limit 30 s) a spočítá barvy snímku:
+
+```
+cmake -DPICOLIBSDK_DIR=<PicoLibSDK> -DOUT=build/coverage [-DPYTHON=<python>] -P tools/coverage/run.cmake
+```
+
+Výstup: `<OUT>/summary.md` (tabulka `hra | build | kód | end řádek | barev na snímku` a řádek `built=N ran=N nonuniform=N total=N`), snímky `<OUT>/shots/<hra>.png`. Kód skriptu je 0, jen když všechny hry projdou (postaví se, kód 0, `reason=quit`, snímek s ≥ 2 barvami). Test `repo_coverage` (label `repo;slow`, asi 2 minuty z čistého buildu, pak jen vteřiny (build zůstává v `<OUT>/build`), limit 1800 s) se registruje jen s `-DPICOPAD_COVERAGE=ON` (např. `cmake -S . -B build/coverage-on -DPICOPAD_COVERAGE=ON ...`). Výsledek a odchylky: [docs/coverage.md](docs/coverage.md).
+
 ## Známá omezení
 
 - Herní smyčka bez volání SDK (čeká jen na `PlayingSound()` nebo jen čte paměť) se nezasekne: emulátor nemá přerušení, takže ji po 100 ms odblokuje hlídač a dál obsluhuje SysTick, klávesy a zvuk z vlastního vlákna (po 20 ms; v headless režimu po jednom ticku 5 ms, tj. asi 4× pomaleji než reálný čas – naměřeno 4,2× s `build\HANG.exe --headless --max-time 2s`: 390 kroků za 8,2 s) (týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET).

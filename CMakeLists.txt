@@ -337,3 +337,18 @@ add_test(NAME sd_image
                  -DPICOPAD_HL_DIR=${PICOPAD_HL_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sd_test.cmake)
 set_tests_properties(sd_image PROPERTIES TIMEOUT 180)
+
+# Pokryti repa: tools/coverage/run.cmake postavi vsech 41 her z PicoLibSDK
+# (ninja -k 0), kazdou spusti headless se smoke.txt a zapise build/coverage/summary.md.
+# Dlouhe (preklada SDK 41x), proto jen s -DPICOPAD_COVERAGE=ON.
+option(PICOPAD_COVERAGE "Register the repo_coverage test (builds all 41 PicoLibSDK games)" OFF)
+if(PICOPAD_COVERAGE AND PICOPAD_PYTHON)
+    add_test(NAME repo_coverage
+             COMMAND ${CMAKE_COMMAND}
+                     -DPICOLIBSDK_DIR=${PICOLIBSDK_DIR}
+                     -DPICOPAD_TOOLCHAIN_DIR=${PICOPAD_TOOLCHAIN_DIR}
+                     -DOUT=${CMAKE_CURRENT_BINARY_DIR}/coverage
+                     -DPYTHON=${PICOPAD_PYTHON}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/coverage/run.cmake)
+    set_tests_properties(repo_coverage PROPERTIES LABELS "repo;slow" TIMEOUT 1800)
+endif()
