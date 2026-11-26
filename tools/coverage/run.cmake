@@ -1,11 +1,12 @@
 # cmake -P: builds every game of PicoLibSDK (tools/coverage) with `ninja -k 0`,
 # runs each built exe headless with smoke.txt and writes <OUT>/summary.md.
 #   -DPICOLIBSDK_DIR=<PicoLibSDK> -DOUT=<dir>
-#   [-DPYTHON=<python>]                 for png_decode.py --colors (default: C:/Progs/anaconda3/python.exe)
+#   [-DPYTHON=<python>]                 for png_decode.py --colors and wav_tone.py (sound peak) (default: C:/Progs/anaconda3/python.exe)
 #   [-DTOOLCHAIN_FILE=...] [-DPICOPAD_TOOLCHAIN_DIR=...] [-DGENERATOR=Ninja]
 # Exit code 0 when every game passes (built, exit code 0, "end reason=quit",
 # screenshot with >= 2 colours), otherwise 1. Layout of OUT: build/ (the
-# external project), run/<game>/ (cwd of a run), shots/<game>.png, summary.md.
+# external project), run/<game>/ (cwd of a run; smoke.png, smoke.wav), shots/<game>.png,
+# summary.md. The sound column is the WAV peak of the whole run (silent = 0).
 if(NOT DEFINED PICOLIBSDK_DIR OR NOT DEFINED OUT)
     message(FATAL_ERROR "usage: cmake -DPICOLIBSDK_DIR=... -DOUT=<dir> -P run.cmake")
 endif()
@@ -39,6 +40,12 @@ endif()
 
 # -k 0: a failing game does not stop the others; the exit code is not checked,
 # a missing exe is reported as build=FAIL
+# Exes left in the persistent build dir by an earlier run must not count: only
+# what this build produces is run (otherwise a game that stopped linking would pass).
+file(GLOB _stale "${_bd}/*.exe")
+if(_stale)
+    file(REMOVE ${_stale})
+endif()
 execute_process(COMMAND ${CMAKE_COMMAND} --build "${_bd}" -- -k 0 RESULT_VARIABLE _brc)
 message(STATUS "build finished with code ${_brc}")
 
@@ -58,6 +65,7 @@ foreach(_g IN LISTS _games)
     set(_code "-")
     set(_end "-")
     set(_cols "-")
+    set(_snd "-")
     set(_ok 0)
     if(EXISTS "${_bd}/${_g}.exe")
         set(_b ok)
@@ -65,7 +73,7 @@ foreach(_g IN LISTS _games)
         set(_wd "${OUT}/run/${_g}")
         file(MAKE_DIRECTORY "${_wd}")
         execute_process(COMMAND "${_bd}/${_g}.exe" --headless --script "${_here}/smoke.txt"
-                                --shot-dir "${_wd}"
+                                --shot-dir "${_wd}" --wav "${_wd}/smoke.wav"
                         WORKING_DIRECTORY "${_wd}"
                         RESULT_VARIABLE _code OUTPUT_VARIABLE _out ERROR_VARIABLE _err
                         TIMEOUT 30)
@@ -95,6 +103,19 @@ foreach(_g IN LISTS _games)
                 endif()
             endif()
         endif()
+        if(EXISTS "${_wd}/smoke.wav")
+            execute_process(COMMAND ${PYTHON} -I ${EMU_DIR}/tests/wav_tone.py "${_wd}/smoke.wav"
+                            RESULT_VARIABLE _wrc OUTPUT_VARIABLE _wout)
+            if(_wrc EQUAL 0 AND _wout MATCHES "peak=([0-9]+)")
+                if(CMAKE_MATCH_1 EQUAL 0)
+                    set(_snd "ticho")
+                else()
+                    set(_snd "peak=${CMAKE_MATCH_1}")
+                endif()
+            else()
+                set(_snd "error")
+            endif()
+        endif()
         if(_err)
             message(STATUS "${_g} stderr: ${_err}")
         endif()
@@ -103,11 +124,11 @@ foreach(_g IN LISTS _games)
         math(EXPR _pass "${_pass} + 1")
     endif()
     string(REPLACE "|" "/" _end "${_end}")
-    string(APPEND _rows "| ${_g} | ${_b} | ${_code} | `${_end}` | ${_cols} |\n")
-    message(STATUS "${_g}: build=${_b} code=${_code} colours=${_cols} ${_end}")
+    string(APPEND _rows "| ${_g} | ${_b} | ${_code} | `${_end}` | ${_cols} | ${_snd} |\n")
+    message(STATUS "${_g}: build=${_b} code=${_code} colours=${_cols} sound=${_snd} ${_end}")
 endforeach()
 
-set(_sum "| hra | build | kód | end řádek | barev na snímku |\n|---|---|---|---|---|\n${_rows}\nbuilt=${_built} ran=${_ran} nonuniform=${_nonuni} total=${_total}\n")
+set(_sum "| hra | build | kód | end řádek | barev na snímku | zvuk (WAV) |\n|---|---|---|---|---|---|\n${_rows}\nbuilt=${_built} ran=${_ran} nonuniform=${_nonuni} total=${_total}\n")
 file(WRITE "${OUT}/summary.md" "${_sum}")
 message(STATUS "built=${_built} ran=${_ran} nonuniform=${_nonuni} total=${_total}")
 if(NOT _pass EQUAL _total OR _total EQUAL 0)
