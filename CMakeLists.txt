@@ -157,6 +157,7 @@ picopad_add_game(CFGSAVE ${CMAKE_SOURCE_DIR}/tests/games/CFGSAVE)
 # Hry z repa PicoLibSDK (zdrojaky beze zmen), ktere se musi prelozit a bezet
 picopad_add_game(T_TINYBERT ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/TINYBERT)
 picopad_add_game(T_INVADERS ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/INVADERS)
+picopad_add_game(T_AMANIA ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/AMANIA)
 picopad_add_game(G_ANTS ${PICOLIBSDK_DIR}/PicoPad/GAME/ANTS)
 picopad_add_game(G_MULTISET ${PICOLIBSDK_DIR}/PicoPad/GAME/MULTISET)
 
@@ -276,6 +277,14 @@ foreach(_g T_TINYBERT T_INVADERS G_ANTS G_MULTISET)
         COLORS smoke.png)
     set_tests_properties(repo_smoke_${_g} PROPERTIES LABELS repo)
 endforeach()
+
+# AMANIA: intro (BootIntro/FakeLoad) je do ~3,5 s bily snimek, proto vlastni skript se snimkem v 6 s
+picopad_headless_test(repo_smoke_T_AMANIA T_AMANIA 0
+    ARGS --headless --script ${PICOPAD_HL_DIR}/amania.txt
+    STDOUT "^end reason=quit "
+    EXIST smoke.png
+    COLORS smoke.png)
+set_tests_properties(repo_smoke_T_AMANIA PROPERTIES LABELS repo)
 
 # ConfigSave()/ConfigLoad() v pameti: hra si overi hodnotu sama; pri neshode
 # visi a skonci --max-time (kod 3), pri shode ResetToBootLoader (kod 0)

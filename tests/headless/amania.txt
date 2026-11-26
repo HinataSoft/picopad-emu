@@ -1,0 +1,4 @@
+# AMANIA: the boot intro (main.cpp BootIntro/FakeLoad) shows a white screen
+# until ~3.5 s, so the snapshot is taken at 6 s (floppy title); quit after 7 s
+6000 shot smoke
+7000 quit
