@@ -30,7 +30,10 @@ fatvol* fatvol_format(const fatvol_io* io, char* err, int errlen);
 /* mounts an existing FAT32 volume (MBR partition or superfloppy); other FAT types -> NULL + err */
 fatvol* fatvol_open(const fatvol_io* io, char* err, int errlen);
 const char* fatvol_error(const fatvol* v); /* last error message */
-void fatvol_close(fatvol* v);              /* writes FAT and FSInfo (free count, last allocated), frees */
+/* writes the FAT and FSInfo (free count, last allocated); 0 ok, nonzero = error (message in
+   fatvol_error). Writing is done once; a later fatvol_close does not repeat a successful flush. */
+int fatvol_flush(fatvol* v);
+int fatvol_close(fatvol* v);               /* fatvol_flush + frees; returns the flush result (0 ok) */
 
 /* paths: uppercase 8.3 segments separated by '/', no leading '/', root = "".
    All of these return 0 = ok, nonzero = error (message in fatvol_error). */

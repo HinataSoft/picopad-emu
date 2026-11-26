@@ -336,6 +336,19 @@ static BOOL WINAPI headless_console_handler(DWORD type)
 
 // ---------------------------------------------------------------------------
 
+// A crash of the game (access violation, trap from host_fatal off the game thread) kills the
+// process; sync the SD card first (--sddir copies the image back, --sd closes the file), then
+// let the system do what it always did (same exit code).
+static LONG WINAPI crash_filter(EXCEPTION_POINTERS* info)
+{
+	(void)info;
+	if (Headless) SetErrorMode(SEM_NOGPFAULTERRORBOX);   // no crash dialog in unattended runs
+	sdcard_shutdown();
+	fflush(stdout);
+	fflush(stderr);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
 int main(int argc, char* argv[])
 {
 	cli_options opt;
@@ -368,6 +381,7 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "%s: --sddir: %s\n", PICOPAD_GAME_NAME, err);
 		return 2;
 	}
+	SetUnhandledExceptionFilter(crash_filter);   // before the game thread starts (window and headless)
 	if (opt.sd != NULL && sdimage_read_only())
 	{
 		fprintf(stderr, "%s: --sd: '%s' opened read-only, writes will fail\n", PICOPAD_GAME_NAME, opt.sd);

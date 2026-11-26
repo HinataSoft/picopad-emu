@@ -22,6 +22,7 @@ static CRITICAL_SECTION Lock;
 static int LockReady;
 static HANDLE DoneEvent;            /* manual reset, set when the first shutdown has finished */
 static volatile LONG ShutdownStarted;
+static volatile DWORD ShutdownThread; /* the thread running the first shutdown */
 static unsigned int Sectors;
 
 static sparsedisk* Disk;
@@ -123,10 +124,13 @@ void sdcard_shutdown(void)
     if (Mode == MODE_NONE) return;
     if (InterlockedExchange(&ShutdownStarted, 1) != 0)
     {
+        /* a crash inside the shutdown itself (on the thread running it): nothing left to wait for */
+        if (ShutdownThread == GetCurrentThreadId()) return;
         /* somebody else is (or was) shutting down: wait for it, never forever */
         WaitForSingleObject(DoneEvent, SHUTDOWN_WAIT_MS);
         return;
     }
+    ShutdownThread = GetCurrentThreadId();
     /* waits for the sector operation in progress; the lock is never released, so the game
        thread stops at its next card access */
     EnterCriticalSection(&Lock);

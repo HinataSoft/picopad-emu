@@ -136,4 +136,22 @@ stderr: ${_err}")
         expect_synced(e "(e) Ctrl+C")
     endif()
 endif()
+# (f) the game crashes (null pointer write) after its writes: the process dies with a non-zero
+#     code (as without --sddir) but the directory is synced first
+make_tree(f)
+file(WRITE "${WORK_DIR}/f/DATA/IN.TXT" "CRASH")
+execute_process(COMMAND "${EXE}" --headless --sddir "${WORK_DIR}/f" --max-time 20s
+                WORKING_DIRECTORY "${WORK_DIR}"
+                RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _err TIMEOUT 120)
+if(_rc EQUAL 0 OR _rc EQUAL 3 OR _rc EQUAL 2)
+    message(FATAL_ERROR "(f) crash: exit code '${_rc}' is not a crash code
+stdout: ${_out}
+stderr: ${_err}")
+endif()
+expect_file("${WORK_DIR}/f/DATA/OUT.TXT" "OK:CRASH")
+expect_file("${WORK_DIR}/f/DATA/MOD.TXT" "CHANGED")
+expect_file("${WORK_DIR}/f/NEWDIR/NEW.TXT" "NEW")
+if(EXISTS "${WORK_DIR}/f/DATA/DEL.TXT")
+    message(FATAL_ERROR "(f) crash: DATA/DEL.TXT was not deleted")
+endif()
 message(STATUS "sddir test OK")

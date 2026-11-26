@@ -100,7 +100,9 @@ static int rd(fatvol* v, u32 sec, u8* buf)
 }
 static int wr(fatvol* v, u32 sec, const u8* buf)
 {
-    if (sec >= v->io.sectors || !v->io.write(v->io.ctx, sec, buf)) return fail(v, "write error at sector %u", sec);
+    if (sec >= v->io.sectors) return fail(v, "write error at sector %u (out of range)", sec);
+    /* the storage contract: a write inside the range fails only when the storage runs out of memory */
+    if (!v->io.write(v->io.ctx, sec, buf)) return fail(v, "out of memory (write failed at sector %u)", sec);
     return 0;
 }
 
@@ -627,24 +629,39 @@ fatvol* fatvol_format(const fatvol_io* io, char* err, int errlen)
 
 const char* fatvol_error(const fatvol* v) { return v ? v->err : ""; }
 
-void fatvol_close(fatvol* v)
+int fatvol_flush(fatvol* v)
 {
-    if (!v) return;
+    int rc = 0;
+    if (!v) return 0;
     if (v->modified) {
         u8 fi[SECT];
-        flush_fat(v);
-        if (v->fsinfo && rd(v, v->fsinfo, fi) == 0) {
-            p32(fi, 0x41615252u);
-            p32(fi + 0x1E4, 0x61417272u);
-            p32(fi + 0x1E8, v->free_cnt);
-            p32(fi + 0x1EC, v->last_alloc);
-            p16(fi + 510, 0xAA55);
-            wr(v, v->fsinfo, fi);
-            wr(v, v->hsect + 7, fi);
+        if (flush_fat(v)) rc = 1;
+        if (v->fsinfo) {
+            if (rd(v, v->fsinfo, fi) == 0) {
+                p32(fi, 0x41615252u);
+                p32(fi + 0x1E4, 0x61417272u);
+                p32(fi + 0x1E8, v->free_cnt);
+                p32(fi + 0x1EC, v->last_alloc);
+                p16(fi + 510, 0xAA55);
+                if (wr(v, v->fsinfo, fi)) rc = 1;
+                if (wr(v, v->hsect + 7, fi)) rc = 1;
+            } else {
+                rc = 1;
+            }
         }
+        if (rc == 0) v->modified = 0;
     }
+    return rc;
+}
+
+int fatvol_close(fatvol* v)
+{
+    int rc;
+    if (!v) return 0;
+    rc = fatvol_flush(v);
     free(v->fat);
     free(v);
+    return rc;
 }
 
 /* ---------------------------------------------------------------- writer */

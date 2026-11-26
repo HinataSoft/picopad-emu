@@ -162,6 +162,12 @@ static int hstat(const wchar_t* p, int* isdir, u64* size, u64* mtime)
     return 1;
 }
 
+static int h_reparse(const wchar_t* p)
+{
+    DWORD a = GetFileAttributesW(p);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+}
+
 static void mkdir_p(const wchar_t* path)
 {
     wchar_t* q = (wchar_t*)malloc(sizeof(wchar_t) * (wcslen(path) + 1));
@@ -370,7 +376,12 @@ static int imp_dir(imp* I, const wchar_t* hdir, const wchar_t* rel, const char* 
     if (!pat) { set_err(I, "", "out of memory"); return -1; }
     h = FindFirstFileW(pat, &f);
     free(pat);
-    if (h == INVALID_HANDLE_VALUE) return 0;
+    if (h == INVALID_HANDLE_VALUE) {
+        char* ru = w2u(rel[0] ? rel : L"");
+        warnf(I->w, "cannot read the directory (loaded as empty): %s", ru && ru[0] ? ru : "(root)");
+        free(ru);
+        return 0;
+    }
     do {
         wchar_t* hp = NULL;
         wchar_t* rl = NULL;
@@ -389,6 +400,11 @@ static int imp_dir(imp* I, const wchar_t* hdir, const wchar_t* rel, const char* 
         }
         if (is_dir && (f.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
             warnf(I->w, "not loaded (link to a directory; the sync leaves it alone): %s", relu);
+            goto next;
+        }
+        if (!is_dir && (f.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+            f.dwReserved0 == IO_REPARSE_TAG_SYMLINK) {
+            warnf(I->w, "not loaded (symbolic link to a file; the sync leaves it alone): %s", relu);
             goto next;
         }
         {
@@ -471,6 +487,11 @@ int sddir_import(const char* dir, const fatvol_io* io, sddir_warn_fn warn, void*
     g_m.root = wd;
     I.v = v; I.w = &w; I.err = err; I.errlen = errlen;
     rc = imp_dir(&I, wd, L"", "");
+    if (rc == 0 && fatvol_flush(v)) {
+        /* the FAT could not be written: directory entries would point at clusters marked free */
+        if (err && errlen > 0) snprintf(err, (size_t)errlen, "cannot finish the SD image: %s", fatvol_error(v));
+        rc = -1;
+    }
     fatvol_close(v);
     if (rc) { m_free(&g_m); return -1; }
     g_have = 1;
@@ -551,29 +572,54 @@ static int file_sink(void* ctx, const void* data, unsigned int n)
     return 0;
 }
 
-/* writes the content of an image file to a host path; 0 ok */
+/* writes the content of an image file to a host path; 0 ok. Never writes the target directly:
+   the data goes to a temp file next to it (mtime set), which then replaces the target (overwrite)
+   or is moved to a name that must still be free (new file, so a file that appeared on the host
+   meanwhile is never replaced). Any failure leaves the host as it was and removes the temp. */
 static int write_host(fatvol* v, const ient* x, const wchar_t* hp, int overwrite, wsink* w)
 {
     wsinkf s;
     fatvol_entry e = to_entry(x);
     FILETIME ft = stamp_to_ft(x->stamp);
+    wchar_t* tmp;
+    size_t n = wcslen(hp) + 40;
+    unsigned int k;
     int rc;
+    tmp = (wchar_t*)malloc(sizeof(wchar_t) * n);
+    if (!tmp) { warnf(w, "%s: out of memory", x->path); return -1; }
     s.bad = 0;
-    s.h = CreateFileW(hp, GENERIC_WRITE, 0, NULL, overwrite ? CREATE_ALWAYS : CREATE_NEW,
-                      FILE_ATTRIBUTE_NORMAL, NULL);
+    s.h = INVALID_HANDLE_VALUE;
+    for (k = 0; k < 100; k++) {
+        swprintf(tmp, n, L"%ls.sddir%lu_%u.tmp", hp, (unsigned long)GetCurrentProcessId(), k);
+        s.h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (s.h != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS) break;
+    }
     if (s.h == INVALID_HANDLE_VALUE) {
         warnf(w, "%s: cannot write to the directory (error %lu)", x->path, (unsigned long)GetLastError());
+        free(tmp);
         return -1;
     }
     rc = fatvol_read_file(v, &e, file_sink, &s);
     if (rc || s.bad) {
-        warnf(w, "%s: %s", x->path, s.bad ? "write to the directory failed" : "damaged in the image");
+        warnf(w, "%s: %s; the directory was left as it is", x->path,
+              s.bad ? "write to the directory failed" : "damaged in the image");
         CloseHandle(s.h);
-        if (!overwrite) DeleteFileW(hp);
+        DeleteFileW(tmp);
+        free(tmp);
         return -1;
     }
     SetFileTime(s.h, NULL, NULL, &ft);
-    CloseHandle(s.h);
+    if (!CloseHandle(s.h) || !MoveFileExW(tmp, hp, overwrite ? MOVEFILE_REPLACE_EXISTING : 0)) {
+        DWORD err = GetLastError();
+        if (!overwrite && (err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS))
+            warnf(w, "%s: appeared on the host meanwhile; left as it is", x->path);
+        else
+            warnf(w, "%s: cannot write to the directory (error %lu)", x->path, (unsigned long)err);
+        DeleteFileW(tmp);
+        free(tmp);
+        return -1;
+    }
+    free(tmp);
     return 0;
 }
 
@@ -637,7 +683,7 @@ static void sync_core(fatvol* v, manifest* m, wsink* w)
             wchar_t* name = NULL;
             wchar_t* hp = NULL;
             const wchar_t* phost;
-            int pidx, exists, isdir;
+            int pidx, exists, isdir, badname = 0;
             size_t plen = strlen(x->path);
             if (plen >= sizeof par) { warnf(w, "%s: path too long; skipped", x->path); continue; }
             parent_of(x->path, par);
@@ -650,6 +696,10 @@ static void sync_core(fatvol* v, manifest* m, wsink* w)
             }
             name = ascii2w(strrchr(x->path, '/') ? strrchr(x->path, '/') + 1 : x->path);
             hp = name ? wjoin(phost, name) : NULL;
+            if (name) {
+                char dummy[16];
+                badname = !fat_name(name, dummy);
+            }
             free(name);
             if (!hp) { warnf(w, "out of memory"); continue; }
             exists = hstat(hp, &isdir, NULL, NULL);
@@ -664,6 +714,12 @@ static void sync_core(fatvol* v, manifest* m, wsink* w)
                     warnf(w, "%s: a file of that name appeared on the host; left as it is", x->path);
                     free(hp);
                     hp = NULL;
+                } else if (exists && h_reparse(hp)) {
+                    warnf(w, "%s: a link of that name is on the host; left as it is", x->path);
+                    free(hp);
+                    hp = NULL;
+                } else if (!exists && badname) {
+                    warnf(w, "%s: created in the directory, but the name is not a valid 8.3 name: it will not be loaded next time", x->path);
                 }
                 ne = m_add(m);
                 key = xstrdup(x->path);
@@ -677,7 +733,8 @@ static void sync_core(fatvol* v, manifest* m, wsink* w)
                 if (exists) {
                     warnf(w, "%s: appeared on the host meanwhile; left as it is", x->path);
                 } else {
-                    write_host(v, x, hp, 0, w);
+                    if (write_host(v, x, hp, 0, w) == 0 && badname)
+                        warnf(w, "%s: written to the directory, but the name is not a valid 8.3 name: it will not be loaded next time", x->path);
                 }
                 free(hp);
             }
@@ -719,7 +776,7 @@ int sddir_sync(const fatvol_io* io, sddir_warn_fn warn, void* wctx)
         warnf(&w, "the SD image could not be read (%s); the directory was left as it is", err);
     } else {
         sync_core(v, &g_m, &w);
-        fatvol_close(v);
+        fatvol_close(v); /* the sync does not modify the image: nothing to flush */
     }
     m_free(&g_m);
     return w.count;

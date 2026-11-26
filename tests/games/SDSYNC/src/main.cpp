@@ -3,7 +3,9 @@
 //     SDSYNC - headless test game for --sddir: reads /DATA/IN.TXT, writes
 //              /DATA/OUT.TXT = "OK:" + the text, rewrites /DATA/MOD.TXT,
 //              deletes /DATA/DEL.TXT, creates /NEWDIR/NEW.TXT, flushes,
-//              shows DONE and then waits (key A ends the game itself)
+//              shows DONE and then waits (key A ends the game itself);
+//              if IN.TXT starts with "CRASH" it crashes instead of waiting
+//              (null pointer write) to test the sync after a crash
 //
 // ****************************************************************************
 
@@ -76,5 +78,6 @@ int main()
 	}
 
 	Show("DONE", COL_GREEN);
+	if (n >= 5 && memcmp(text, "CRASH", 5) == 0) *(volatile int*)0 = 1;
 	Wait();
 }
