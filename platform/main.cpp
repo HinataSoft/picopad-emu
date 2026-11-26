@@ -321,6 +321,19 @@ static BOOL WINAPI console_handler(DWORD type)
 	return TRUE;
 }
 
+// Headless: SDL is not initialised, so SDL does not turn Ctrl+C into SDL_QUIT. Sync/close the
+// SD card (waits for a sector operation, blocks the game thread afterwards) and end with code 0,
+// as the window mode does. Runs on its own thread.
+static BOOL WINAPI headless_console_handler(DWORD type)
+{
+	(void)type;
+	sdcard_shutdown();
+	fflush(stdout);
+	fflush(stderr);
+	TerminateProcess(GetCurrentProcess(), 0);
+	return TRUE;
+}
+
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[])
@@ -364,6 +377,7 @@ int main(int argc, char* argv[])
 	if (opt.headless)
 	{
 		Headless = 1;
+		SetConsoleCtrlHandler(headless_console_handler, TRUE);
 		int code = headless_run(&opt, PICOPAD_GAME_NAME);
 		sdcard_shutdown();
 		fflush(stdout);

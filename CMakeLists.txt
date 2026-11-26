@@ -382,8 +382,11 @@ set_tests_properties(sd_image PROPERTIES TIMEOUT 180)
 
 # --sddir: SDSYNC cte /DATA/IN.TXT ze slozky, zapise, zmeni a smaze soubory; po behu
 # (konec hrou, quit, --max-time) musi slozka odpovidat; ne-8.3 soubor zustane; chyby argumentu
+# pomocnik: spusti prikaz ve vlastni skupine procesu a posle mu CTRL_BREAK (Ctrl+C)
+add_executable(ctrlc_helper tests/ctrlc_helper.c)
+picopad_exe_runtime(ctrlc_helper)
 add_test(NAME sd_dir
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:SDSYNC>
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:SDSYNC> -DCTRLC=$<TARGET_FILE:ctrlc_helper>
                  -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sddir
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sddir_test.cmake)
 set_tests_properties(sd_dir PROPERTIES TIMEOUT 180)

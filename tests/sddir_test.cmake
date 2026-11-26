@@ -118,4 +118,22 @@ endif()
 # an untouched tree after the failed runs
 expect_file("${WORK_DIR}/d/DATA/MOD.TXT" "OLD")
 expect_file("${WORK_DIR}/d/DATA/DEL.TXT" "X")
+# (e) Ctrl+C (console control event) in headless mode while the game still runs: exit 0,
+#     directory synced. Needs a console shared with the child; without one the case is skipped.
+if(DEFINED CTRLC)
+    make_tree(e)
+    execute_process(COMMAND "${CTRLC}" 3000 "${EXE}" --headless --sddir "${WORK_DIR}/e" --max-time 1000000s
+                    WORKING_DIRECTORY "${WORK_DIR}"
+                    RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _err TIMEOUT 120)
+    if(_rc EQUAL 99)
+        message(STATUS "(e) skipped: no console to send Ctrl+Break to:
+${_err}")
+    elseif(NOT _rc EQUAL 0)
+        message(FATAL_ERROR "(e) Ctrl+C: exit code '${_rc}', expected 0
+stdout: ${_out}
+stderr: ${_err}")
+    else()
+        expect_synced(e "(e) Ctrl+C")
+    endif()
+endif()
 message(STATUS "sddir test OK")
