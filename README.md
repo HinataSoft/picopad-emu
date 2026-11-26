@@ -198,19 +198,27 @@ build\picopad-sdimg.exe get card.img /TEST/OUT.TXT out.txt
 
 ## Pokrytí repa (tools/coverage)
 
-`tools/coverage` je cizí projekt přes `PicopadEmu.cmake`: ke každému adresáři `PicoPad/GAME/*` a `PicoPad/TINYGAME/*` s `Makefile` přidá cíl `G_<DIR>` / `T_<DIR>` (41 her). Runner postaví všechny s `ninja -k 0` (selhání jedné hry ostatní nezastaví), každé exe spustí headless se `tools/coverage/smoke.txt` (snímek ve 3 s, `quit` ve 4,5 s, vnější limit 30 s) a spočítá barvy snímku:
+`tools/coverage` je cizí projekt přes `PicopadEmu.cmake`: ke každému adresáři `PicoPad/GAME/*` a `PicoPad/TINYGAME/*` s `Makefile` přidá cíl `G_<DIR>` / `T_<DIR>` (41 her). Runner postaví všechny s `ninja -k 0` (selhání jedné hry ostatní nezastaví), každé exe spustí headless se `tools/coverage/smoke.txt` (snímek ve 3 s, `quit` ve 4,5 s, vnější limit 30 s) a spočítá barvy snímku a špičku WAV z téhož běhu (`--wav`; `ticho` = špička 0). Před buildem runner smaže staré `*.exe` v `<OUT>/build`, takže se spouští jen to, co tento build opravdu vytvořil:
 
 ```
 cmake -DPICOLIBSDK_DIR=<PicoLibSDK> -DOUT=build/coverage [-DPYTHON=<python>] -P tools/coverage/run.cmake
 ```
 
-Výstup: `<OUT>/summary.md` (tabulka `hra | build | kód | end řádek | barev na snímku` a řádek `built=N ran=N nonuniform=N total=N`), snímky `<OUT>/shots/<hra>.png`. Kód skriptu je 0, jen když všechny hry projdou (postaví se, kód 0, `reason=quit`, snímek s ≥ 2 barvami). Test `repo_coverage` (label `repo;slow`, asi 2 minuty z čistého buildu, pak jen vteřiny (build zůstává v `<OUT>/build`), limit 1800 s) se registruje jen s `-DPICOPAD_COVERAGE=ON` (např. `cmake -S . -B build/coverage-on -DPICOPAD_COVERAGE=ON ...`). Výsledek a odchylky: [docs/coverage.md](docs/coverage.md).
+Výstup: `<OUT>/summary.md` (tabulka `hra | build | kód | end řádek | barev na snímku | zvuk (WAV)` a řádek `built=N ran=N nonuniform=N total=N`), snímky `<OUT>/shots/<hra>.png`. Kód skriptu je 0, jen když všechny hry projdou (postaví se, kód 0, `reason=quit`, snímek s ≥ 2 barvami). Test `repo_coverage` (label `repo;slow`, asi 2 minuty z čistého buildu, pak jen vteřiny (build zůstává v `<OUT>/build`), limit 1800 s) se registruje jen s `-DPICOPAD_COVERAGE=ON` (např. `cmake -S . -B build/coverage-on -DPICOPAD_COVERAGE=ON ...`). Výsledek a odchylky: [docs/coverage.md](docs/coverage.md).
 
 ## Známá omezení
 
 - Herní smyčka bez volání SDK (čeká jen na `PlayingSound()` nebo jen čte paměť) se nezasekne: emulátor nemá přerušení, takže ji po 100 ms odblokuje hlídač a dál obsluhuje SysTick, klávesy a zvuk z vlastního vlákna (po 20 ms; v headless režimu po jednom ticku 5 ms, tj. asi 4× pomaleji než reálný čas – naměřeno 4,2× s `build\HANG.exe --headless --max-time 2s`: 390 kroků za 8,2 s) (týká se např. her PACMAN, SOKOBAN a VEGASLOT z MULTISET).
 - Headless běh, který se nikdy sám neukončí: hra, která ve virtuálním čase čeká v cyklu na `Time()` uvnitř `IRQ_LOCK` (zakázaná přerušení), čas neposune – pumpa se uvnitř zámku vrací hned (před `plat_tick` i ochranou proti nečinnosti) a hlídač do zámku nevstoupí, takže nezabere ani `--max-time`. Stejně tak `--headless --max-time 0` limit vypne úplně. V obou případech je potřeba vnější časový limit (např. `TIMEOUT` v ctestu).
 - Nevkládat `<stdio.h>` spolu s `includes.h` SDK: `getchar` z `lib_print.h` koliduje s deklarací v `stdio.h`.
+
+## Chování hostitele, na které se autor hry spoléhá
+
+- Konfigurace: `ConfigSave()` drží kopii jen v paměti procesu, `ConfigLoad()` ji v téže době běhu vrátí; mezi spuštěními se nic neukládá (každý běh začíná výchozí konfigurací).
+- Přímý zápis do flash (`FlashErase`, `FlashProgram` volané hrou) je fatální chyba: výpis na stderr a kód 1. `FlashSize` je 2 MiB, `FlashIDText` je pevný text, `ADC_Temp()` vrací stále 27,0 °C. USB Mini-Port není nikdy připojený.
+- Zvuk z GPIO (bit-bang na GPIO15, jako TINYGAME): emuluje se jen do prvního `PWM_Enable` na slice zvuku, pak (po zbytek běhu) hraje jen PWM zvuk SDK. Vzorek je časově zprůměrovaná úroveň pinu, vysoká úroveň = 16384, klid v 0 = ticho. Zachytí se jen změny úrovně přes funkce `GPIO_*` / `gpio_put`; přímé zápisy do `sio_hw->gpio_set/clr/togl` ne. Změny úrovně mimo herní vlákno se ignorují. Změna úrovně bere zámek pumpy (stejně jako zápis registrů mixeru), aby mixer nikdy nečetl rozpracovaný stav; nad zámkem pumpy pak mixer před zaznamenáním změny dopočítá vzorky se starou úrovní.
+- `random()` / `srandom()` jsou deterministické s pevným startem, nezávisle na `--seed` (ten řídí jen to, co čte hostitel).
+- Karta, kterou PICTOR používá pro žebříček: hra zapisuje `/GAME/PICTOR.TOP` a adresář `GAME` nevytváří, obraz musí složku `GAME/` obsahovat (např. `picopad-sdimg create card.img --from dir`, kde `dir` obsahuje podadresář `GAME/`).
 
 ## Ověřeno
 
