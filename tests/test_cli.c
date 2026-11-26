@@ -86,6 +86,33 @@ int main(void)
         char* argv[] = { "x.exe", "--fast-display=1" };  /* flag takes no value */
         CHECK(parse(&o, err, 2, argv) != CLI_OK);
     }
+    /* --sd PATH, --sd=PATH, default none, valid with and without --headless */
+    {
+        char* argv[] = { "x.exe", "--sd", "x.img" };
+        CHECK_EQ(parse(&o, err, 3, argv), CLI_OK);
+        CHECK(o.sd != NULL && strcmp(o.sd, "x.img") == 0);
+    }
+    {
+        char* argv[] = { "x.exe", "--headless", "--sd=a b.img" };
+        CHECK_EQ(parse(&o, err, 3, argv), CLI_OK);
+        CHECK(o.sd != NULL && strcmp(o.sd, "a b.img") == 0);
+        CHECK_EQ(o.headless, 1);
+    }
+    {
+        char* argv[] = { "x.exe" };
+        CHECK_EQ(parse(&o, err, 1, argv), CLI_OK);
+        CHECK(o.sd == NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--sd" };   /* missing value */
+        CHECK_EQ(parse(&o, err, 2, argv), CLI_ERROR);
+        CHECK(strstr(err, "--sd") != NULL);
+    }
+    {
+        char* argv[] = { "x.exe", "--sd=" };   /* empty value */
+        CHECK_EQ(parse(&o, err, 2, argv), CLI_ERROR);
+        CHECK(strstr(err, "--sd") != NULL);
+    }
     /* headless defaults */
     {
         char* argv[] = { "x.exe" };

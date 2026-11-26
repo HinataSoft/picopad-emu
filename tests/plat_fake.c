@@ -109,3 +109,25 @@ int plat_tick(unsigned long long t_us)
     fake_tick_count++;
     return fake_tick_fn ? fake_tick_fn(t_us) : -1;
 }
+
+unsigned char* fake_sd_data = NULL;
+unsigned int fake_sd_sectors = 0;
+int fake_sd_readonly = 0;
+int fake_sd_writes = 0;
+
+unsigned int plat_sd_sectors(void) { return fake_sd_data ? fake_sd_sectors : 0; }
+
+int plat_sd_read(unsigned int sector, unsigned char* buf512)
+{
+    if (!fake_sd_data || sector >= fake_sd_sectors) return 0;
+    memcpy(buf512, fake_sd_data + (size_t)sector * 512, 512);
+    return 1;
+}
+
+int plat_sd_write(unsigned int sector, const unsigned char* buf512)
+{
+    if (!fake_sd_data || fake_sd_readonly || sector >= fake_sd_sectors) return 0;
+    memcpy(fake_sd_data + (size_t)sector * 512, buf512, 512);
+    fake_sd_writes++;
+    return 1;
+}

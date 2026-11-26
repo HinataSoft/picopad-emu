@@ -30,6 +30,11 @@ void plat_log(const char* msg);
 void plat_audio_write(const short* s, int n);        /* PLAT_AUDIO_CAPTURE samples, in order */
 int  plat_tick(unsigned long long t_us);             /* before each SysTick; <0 = go on, >=0 = end game with this exit code */
 
+/* SD card (sectors of 512 bytes); a write must be in the backing store when plat_sd_write returns */
+unsigned int plat_sd_sectors(void);                   /* 0 = no card inserted */
+int  plat_sd_read(unsigned int sector, unsigned char* buf512);        /* 1 = OK, 0 = error */
+int  plat_sd_write(unsigned int sector, const unsigned char* buf512); /* 1 = OK, 0 = error (out of range, read-only) */
+
 /* implemented by host/, called by platform/ */
 void host_configure(const host_config* cfg);
 int  host_run_game(void);                 /* RuntimeInit + game_main on the calling thread; returns exit code */

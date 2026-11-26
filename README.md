@@ -52,6 +52,7 @@ Volby (lze psát i jako `--volba=hodnota`):
 - `--seed N` – semínko náhodných čísel (výchozí z času)
 - `--max-time T` – po čase T skončí s kódem 3; T = `2000`, `2000ms` nebo `2s`
 - `--trace-keys` – při každé změně stavu kláves vypíše na stderr `keys t=<ms> bits=0x<hex>`
+- `--sd IMG` – obraz SD karty, viz [SD karta](#sd-karta---sd)
 - `--headless`, `--script`, `--shot-dir`, `--wav` – běh bez okna, viz [Headless režim](#headless-režim)
 - `--help` – nápověda
 
@@ -69,7 +70,7 @@ Klávesy:
 
 Mapování `letters` se řídí popiskem klávesy podle aktivního rozložení klávesnice (na české QWERTZ funguje klávesa s popiskem Y). V rozložení `layout` se klávesy berou podle fyzické polohy (pozice A S / Z X na americké klávesnici, na QWERTZ tedy A S / Y X) a tvoří čtverec, který kopíruje fyzické rozmístění tlačítek X Y / A B na Picopadu.
 
-Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty; 3 = vypršel `--max-time`.
+Návratové kódy: 0 = hra skončila přes `ResetToBootLoader` (v TETRISu podržené Y), nebo zavření okna / Ctrl+C; 1 = fatální chyba (`panic`); 2 = chybné argumenty (i neplatný obraz `--sd`); 3 = vypršel `--max-time`.
 
 ## Headless režim
 
@@ -177,6 +178,23 @@ Kódy: 0 v pořádku, 1 chyba operace (zpráva na stderr), 2 špatné argumenty.
 - Dlouhá jména: `lib_fat` je nepodporuje (jen 8.3). `Disk_ExtractName()` by jméno mlčky ořízlo na 8 + 3 znaky, proto nástroj každé jméno předem ověří (max 8 znaků, tečka, max 3 znaky přípony, jen písmena, číslice a `!#$%&'()-@^_`{}~`; malá písmena `lib_fat` převede na velká). Jméno, které to nesplňuje (dlouhé, s diakritikou…), končí kódem 1 se jménem souboru ve zprávě a rozpracovaný obraz se smaže; soubor se nikdy tiše nevynechá ani nepřejmenuje (test `sdimg`).
 - Formátování: `DiskFormatDef()` na hostu padá na dělení nulou (`DiskFormat` s `clust = 0` začíná `mediasize / clust2`; RP2040 dělič vrací hodnotu, x86 vyvolá výjimku), proto nástroj volá `DiskFormat` s explicitním souborovým systémem a velikostí clusteru, které by zvolil automatický režim: FAT32 od 256 MB, jinak FAT16 (FAT12 pro obrazy do cca 2 MB).
 - Sestavení: `fat_ops.c` (strana SDK, implementuje `lib_sd` API `SDConnect`/`SDReadSect`/`SDWriteSect`/`SDMediaSize` nad souborem obrazu) a `lib_fat.c` + `lib_stream.c`; `host/sd.c` ani host vrstva se nelinkují. `main.c` je čisté C bez SDK hlaviček.
+
+## SD karta (--sd)
+
+Herní exe umí `--sd IMG` (v okně i s `--headless`): hra pak vidí SD kartu, jejímž obsahem je soubor IMG. Bez `--sd` karta `není vložena` (`DiskAutoMount()` selže, jako dřív).
+
+```
+build\picopad-sdimg.exe create card.img --size 8 --from tests\sd
+build\SDTEST.exe --headless --sd card.img
+build\picopad-sdimg.exe get card.img /TEST/OUT.TXT out.txt
+```
+
+- Obraz je surový disk (sektory 512 B od offsetu 0, s MBR) – přesně to, co vytvoří `picopad-sdimg create` (viz [Obrazy SD karty](#obrazy-sd-karty-picopad-sdimg)). Velikost musí být násobek 512 a aspoň 64 KiB; offsety jsou 64bitové (obrazy do 4 GiB).
+- Zápisy hry jdou přímo do souboru (jako na skutečnou kartu); každý zapsaný sektor se hned předá systému, takže je v souboru při jakémkoli konci běhu: `quit`, `ResetToBootLoader`, `--max-time`, fatální chyba, zavření okna i ukončení procesu po zaseknutí hry. Hra ale musí soubor zavřít/vyprázdnit sama (`FileClose`, `DiskFlush`), jinak data zůstanou jen v mezipaměti `lib_fat`, stejně jako na zařízení. Chcete-li hru zkoušet opakovaně na stejných datech, pracujte na kopii obrazu.
+- Neplatný obraz (soubor neexistuje, je to adresář, velikost není násobek 512 nebo je pod 64 KiB) = zpráva `<hra>: --sd: …` na stderr a kód 2, hra se nespustí.
+- Obraz s atributem jen pro čtení se otevře, ale zápisy selžou (`SDWriteSect` vrátí `False`, hra vidí chybu zápisu); běh dopadne jako obvykle.
+- `lib_fat` zná jen jména 8.3 (bez dlouhých jmen).
+- Test `sd_image` (hra `SDTEST`, `tests/sd_test.cmake`) hlídá čtení, zápis, všechny způsoby konce běhu, běh bez `--sd`, neplatné obrazy a obraz jen pro čtení; test `sd` jednotkově ověřuje `host/sd.c` nad falešnou platformou.
 
 ## Známá omezení
 

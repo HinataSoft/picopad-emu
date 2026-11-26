@@ -41,6 +41,7 @@ picopad_host_test(keys)
 picopad_host_test(audio)
 picopad_host_test(exit)
 picopad_host_test(tick)
+picopad_host_test(sd)
 # audio test uses a helper thread (windows.h kept out of the SDK-including TU)
 target_sources(test_audio PRIVATE tests/thread_helper.c)
 set_tests_properties(audio PROPERTIES TIMEOUT 30)
@@ -154,6 +155,7 @@ picopad_add_game(HANG ${CMAKE_SOURCE_DIR}/tests/games/HANG)
 picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
 picopad_add_game(CFGSAVE ${CMAKE_SOURCE_DIR}/tests/games/CFGSAVE)
 picopad_add_game(BEEP ${CMAKE_SOURCE_DIR}/tests/games/BEEP)
+picopad_add_game(SDTEST ${CMAKE_SOURCE_DIR}/tests/games/SDTEST)
 
 # Hry z repa PicoLibSDK (zdrojaky beze zmen), ktere se musi prelozit a bezet
 picopad_add_game(T_TINYBERT ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/TINYBERT)
@@ -324,3 +326,14 @@ add_test(NAME sdimg
                  -DPYTHON=${PICOPAD_PYTHON}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdimg_test.cmake)
 set_tests_properties(sdimg PROPERTIES TIMEOUT 120)
+
+# --sd: SDTEST cte /TEST/IN.TXT z obrazu karty a zapise /TEST/OUT.TXT; konce
+# behu (exit, quit, --max-time), bez --sd, neplatne obrazy, obraz jen pro cteni
+add_test(NAME sd_image
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:SDTEST>
+                 -DSDIMG=$<TARGET_FILE:picopad-sdimg>
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sd
+                 -DSD_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/sd
+                 -DPICOPAD_HL_DIR=${PICOPAD_HL_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sd_test.cmake)
+set_tests_properties(sd_image PROPERTIES TIMEOUT 180)

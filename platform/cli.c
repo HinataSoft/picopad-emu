@@ -20,6 +20,7 @@ static const char Usage[] =
     "  --shot-dir DIR         screenshot directory, default . (needs --headless)\n"
     "  --wav FILE             write audio to a WAV file (needs --headless)\n"
     "  --trace-keys           log key events\n"
+    "  --sd FILE              SD card image (raw disk image, see picopad-sdimg)\n"
     "  --help                 this text";
 
 const char* cli_usage(void)
@@ -75,6 +76,7 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
     out->shot_dir = ".";
     out->wav = NULL;
     out->trace_keys = 0;
+    out->sd = NULL;
 
     for (i = 1; i < argc; i++)
     {
@@ -109,7 +111,8 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
 
         if (strcmp(name, "--scale") && strcmp(name, "--keys") &&
             strcmp(name, "--seed") && strcmp(name, "--max-time") &&
-            strcmp(name, "--script") && strcmp(name, "--shot-dir") && strcmp(name, "--wav"))
+            strcmp(name, "--script") && strcmp(name, "--shot-dir") && strcmp(name, "--wav") &&
+            strcmp(name, "--sd"))
             return fail(err, errlen, "unknown option '%s'", arg);
 
         if (!val)
@@ -119,11 +122,12 @@ int cli_parse(int argc, char** argv, cli_options* out, char* err, int errlen)
         }
 
         if (strcmp(name, "--script") == 0 || strcmp(name, "--shot-dir") == 0 ||
-            strcmp(name, "--wav") == 0)
+            strcmp(name, "--wav") == 0 || strcmp(name, "--sd") == 0)
         {
             if (val[0] == 0) return fail(err, errlen, "%s: empty value", name);
             if (strcmp(name, "--script") == 0) out->script = val;
             else if (strcmp(name, "--shot-dir") == 0) { out->shot_dir = val; shot_dir_set = 1; }
+            else if (strcmp(name, "--sd") == 0) out->sd = val;
             else out->wav = val;
             continue;
         }

@@ -29,6 +29,10 @@ extern int fake_audio_count;                   /* all samples passed to plat_aud
 extern unsigned long long fake_tick_times[64]; /* t_us of the first 64 plat_tick() calls */
 extern int fake_tick_count;                    /* all plat_tick() calls */
 extern int (*fake_tick_fn)(unsigned long long t_us); /* plat_tick result; NULL = -1 */
+extern unsigned char* fake_sd_data;            /* SD card content (fake_sd_sectors * 512 bytes); NULL = no card */
+extern unsigned int fake_sd_sectors;           /* plat_sd_sectors() */
+extern int fake_sd_readonly;                   /* 1 = plat_sd_write fails */
+extern int fake_sd_writes;                     /* successful plat_sd_write calls */
 
 #ifdef __cplusplus
 }
