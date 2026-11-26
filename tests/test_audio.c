@@ -1,6 +1,8 @@
 /* PWM sound: the SDK mixer (PWMSndIrq, unchanged) runs on the game thread via
    the pump, driven by emulated time; samples go to plat_audio_write (capture),
-   to a ring drained by host_audio_render, or are discarded. */
+   to a ring drained by host_audio_render, or are discarded.
+   GPIO sound (bit-bang on PWMSND_GPIO, TINYGAME): until PWM_Enable on the sound
+   slice, a sample is the fraction of its interval the pin spent at 1 x 16384. */
 #include "_sdk/inc/sdk_watchdog.h"
 #include "_sdk/inc/sdk_irq.h"
 #include "_lib/inc/lib_pwmsnd.h"
@@ -40,7 +42,9 @@ static void render_thread(void* arg)
 }
 
 static int run_mode; /* 0 = capture, 1 = discard (audio_out 0), 2 = ring + render thread,
-                        3 = ring, consumer clock faster/slower than emulated time */
+                        3 = ring, consumer clock faster/slower than emulated time,
+                        4 = GPIO sound, capture, 5 = WaitUs(1) loop on the real clock,
+                        6 = GPIO sound, ring (production 'lead' ahead of emulated time) */
 
 #define DUE(t) ((int)((unsigned long long)(t) * 44100 / 1000000))
 
@@ -169,9 +173,127 @@ static void audio_drift(void)
     }
 }
 
+/* mode 4 (capture, virtual time): GPIO bit-bang sound on PWMSND_GPIO */
+static void gpio_idle_silent(void)
+{
+    int i, c0 = fake_audio_count;
+    WaitMs(100); /* pin never changed */
+    CHECK_EQ(fake_audio_count - c0, 4410);
+    for (i = c0; i < fake_audio_count; i++) CHECK_EQ(fake_audio[i], 0);
+}
+
+static void gpio_square_1khz(void)
+{
+    int i, c0 = fake_audio_count, n, rising = 0, mid = 0, bad = 0;
+    for (i = 0; i < 200; i++) {
+        gpio_put(PWMSND_GPIO, 1);
+        WaitUs(500);
+        gpio_put(PWMSND_GPIO, 0);
+        WaitUs(500);
+    }
+    n = fake_audio_count - c0;
+    CHECK(n >= 8819 && n <= 8821);
+    for (i = c0; i < fake_audio_count; i++) {
+        short v = fake_audio[i];
+        if (v != 0 && v != 16384) {
+            /* between the levels only on a sample that contains an edge */
+            if (v < 0 || v > 16384) bad++;
+            else mid++;
+        }
+        /* before the window the pin was idle at 0 (gpio_idle_silent) */
+        if ((i == c0 || fake_audio[i - 1] < 8192) && v >= 8192) rising++;
+    }
+    printf("gpio 1 kHz: %d samples, %d rising edges, %d edge samples\n", n, rising, mid);
+    CHECK_EQ(bad, 0);
+    CHECK(mid <= 400 + 2); /* at most one per edge */
+    CHECK(rising >= 199 && rising <= 201);
+    /* half of the time at 1: mean 8192 */
+    {
+        long long sum = 0;
+        for (i = c0; i < fake_audio_count; i++) sum += fake_audio[i];
+        CHECK(sum / n >= 8192 - 100 && sum / n <= 8192 + 100);
+    }
+}
+
+static void gpio_ignored_after_pwm(void)
+{
+    int i, c0, bad = 0;
+    PWM_Enable(PWMSndSlice); /* the SDK PWM sound runs: M2 path */
+    c0 = fake_audio_count;
+    for (i = 0; i < 50; i++) {
+        gpio_put(PWMSND_GPIO, 1);
+        WaitUs(500);
+        gpio_put(PWMSND_GPIO, 0);
+        WaitUs(500);
+    }
+    gpio_put(PWMSND_GPIO, 1);
+    WaitMs(10);
+    gpio_put(PWMSND_GPIO, 0);
+    CHECK(fake_audio_count - c0 >= 2645);
+    /* only the idle mixer sample: TOP/2 with time dithering = -32 / 0 */
+    for (i = c0; i < fake_audio_count; i++)
+        if (fake_audio[i] != -32 && fake_audio[i] != 0) bad++;
+    CHECK_EQ(bad, 0);
+}
+
+/* mode 6 (ring, virtual time): with the ring the mixer produces AUDIO_TARGET
+   samples ahead of emulated time; the GPIO samples follow with that latency,
+   the square wave still arrives whole (no glitches, every edge) */
+static short ring_out[16384]; /* old ring content + lead + 100 ms */
+static void gpio_ring(void)
+{
+    int i, n = 0, rising = 0, bad = 0, ones = 0;
+    /* drop what earlier runs left in the ring (else it is at the cap and the
+       first samples are dropped) */
+    host_audio_render(ring_out, (int)host_audio_ring_level());
+    for (i = 0; i < 100; i++) {
+        unsigned int lvl;
+        gpio_put(PWMSND_GPIO, 1);
+        WaitUs(500);
+        gpio_put(PWMSND_GPIO, 0);
+        WaitUs(500);
+        lvl = host_audio_ring_level();
+        if (n + (int)lvl > (int)(sizeof(ring_out) / sizeof(ring_out[0]))) break;
+        host_audio_render(ring_out + n, (int)lvl);
+        n += (int)lvl;
+    }
+    CHECK_EQ(i, 100);
+    for (i = 0; i < n; i++) {
+        if (ring_out[i] < 0 || ring_out[i] > 16384) bad++;
+        if (ring_out[i] == 16384) ones++;
+        /* before ring_out[0] the pin was idle at 0 */
+        if ((i == 0 || ring_out[i - 1] < 8192) && ring_out[i] >= 8192) rising++;
+    }
+    printf("gpio ring: %d samples, %d rising edges\n", n, rising);
+    CHECK_EQ(bad, 0);
+    CHECK(ones > 1000);
+    CHECK_EQ(rising, 100);
+}
+
+/* mode 5 (real clock, ring): a TINYGAME tone is a loop of WaitUs(1); it must
+   not take much longer in real time than on the device */
+static unsigned long long realtime_us;
+static void waitus1_realtime(void)
+{
+    int i;
+    unsigned long long t0 = plat_now_us();
+    for (i = 0; i < 100000; i++) {
+        if (i % 250 == 0) gpio_put(PWMSND_GPIO, (i / 250) & 1); /* ~2 kHz tone as Sound() */
+        WaitUs(1);
+    }
+    realtime_us = plat_now_us() - t0;
+}
+
 int host_call_game_main(void)
 {
-    if (run_mode == 0) audio_capture();
+    if (run_mode == 4) {
+        gpio_idle_silent();
+        gpio_square_1khz();
+        gpio_ignored_after_pwm();
+    }
+    else if (run_mode == 5) waitus1_realtime();
+    else if (run_mode == 6) gpio_ring();
+    else if (run_mode == 0) audio_capture();
     else if (run_mode == 1) audio_discard();
     else if (run_mode == 3) audio_drift();
     else audio_game();
@@ -217,5 +339,30 @@ int main(void)
     CHECK(drift_min >= 512);
     CHECK(drift_max <= 3584);
     CHECK_EQ(drift_underruns, 0);
+
+    /* GPIO sound, capture, virtual time */
+    cfg.virtual_clock = 1;
+    cfg.audio_out = PLAT_AUDIO_CAPTURE;
+    host_configure(&cfg);
+    run_mode = 4;
+    fake_audio_count = 0;
+    CHECK_EQ(host_run_game(), 0);
+
+    /* GPIO sound through the ring (lead), virtual time */
+    cfg.audio_out = PLAT_AUDIO_RING;
+    host_configure(&cfg);
+    run_mode = 6;
+    CHECK_EQ(host_run_game(), 0);
+
+    /* 100 000 x WaitUs(1) on the real (QPC) clock, ring output as in a window */
+    cfg.virtual_clock = 0;
+    cfg.audio_out = PLAT_AUDIO_RING;
+    host_configure(&cfg);
+    run_mode = 5;
+    fake_real_time = 1;
+    CHECK_EQ(host_run_game(), 0);
+    fake_real_time = 0;
+    printf("100000 x WaitUs(1): %llu us real time\n", realtime_us);
+    CHECK(realtime_us < 300000);
     return CHECK_DONE();
 }

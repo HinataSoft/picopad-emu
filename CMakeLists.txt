@@ -153,6 +153,7 @@ picopad_add_game(STALL ${CMAKE_SOURCE_DIR}/tests/games/STALL)
 picopad_add_game(HANG ${CMAKE_SOURCE_DIR}/tests/games/HANG)
 picopad_add_game(WDPANIC ${CMAKE_SOURCE_DIR}/tests/games/WDPANIC)
 picopad_add_game(CFGSAVE ${CMAKE_SOURCE_DIR}/tests/games/CFGSAVE)
+picopad_add_game(BEEP ${CMAKE_SOURCE_DIR}/tests/games/BEEP)
 
 # Hry z repa PicoLibSDK (zdrojaky beze zmen), ktere se musi prelozit a bezet
 picopad_add_game(T_TINYBERT ${PICOLIBSDK_DIR}/PicoPad/TINYGAME/TINYBERT)
@@ -163,11 +164,11 @@ picopad_add_game(G_MULTISET ${PICOLIBSDK_DIR}/PicoPad/GAME/MULTISET)
 
 # picopad_headless_test(<name> <game target> <exit code> [ARGS ...] [STDOUT ...]
 #     [STDERR ...] [EXIST ...] [ABSENT ...] [COMPARE f ref ...] [MAKE_FILE f] [WAV f]
-#     [MAX_SECONDS n])
+#     [MAX_SECONDS n] [TONE f hz pct peak])
 # runs tests/headless_test.cmake in its own directory build/headless/<name>
 set(PICOPAD_HL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/headless")
 function(picopad_headless_test name game expect)
-    cmake_parse_arguments(HT "" "MAKE_FILE;WAV;MAX_SECONDS;COLORS" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE" ${ARGN})
+    cmake_parse_arguments(HT "" "MAKE_FILE;WAV;MAX_SECONDS;COLORS" "ARGS;STDOUT;STDERR;EXIST;ABSENT;COMPARE;TONE" ${ARGN})
     set(_work "${CMAKE_CURRENT_BINARY_DIR}/headless/${name}")
     add_test(NAME ${name}
              COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${game}> -DEXPECT=${expect}
@@ -184,6 +185,8 @@ function(picopad_headless_test name game expect)
                      "-DCOLORS=${HT_COLORS}"
                      "-DPYTHON=${PICOPAD_PYTHON}"
                      "-DDECODE=${CMAKE_CURRENT_SOURCE_DIR}/tests/png_decode.py"
+                     "-DTONE=${HT_TONE}"
+                     "-DTONE_PY=${CMAKE_CURRENT_SOURCE_DIR}/tests/wav_tone.py"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/headless_test.cmake)
     set_tests_properties(${name} PROPERTIES TIMEOUT 40)
 endfunction()
@@ -291,3 +294,13 @@ set_tests_properties(repo_smoke_T_AMANIA PROPERTIES LABELS repo)
 picopad_headless_test(cfgsave CFGSAVE 0
     ARGS --headless --max-time 5s
     STDOUT "^end reason=exit ")
+
+# Zvuk z GPIO (bit-bang jako TINYGAME, USE_PWMSND 0): BEEP hraje 500 ms
+# obdelnik 1 kHz pres gpio_put + sleep_us; WAV ma ton 1000 Hz +- 2 %, spicka >= 8000
+if(PICOPAD_PYTHON)
+    picopad_headless_test(beep_wav BEEP 0
+        ARGS --headless --wav beep.wav
+        STDOUT "^end reason=exit t=[0-9]+ code=0 "
+        WAV beep.wav
+        TONE beep.wav 1000 2 8000)
+endif()

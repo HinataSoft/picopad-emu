@@ -13,6 +13,9 @@
 #   [-DCOLORS=f -DPYTHON=py -DDECODE=png_decode.py]
 #                             PNG f has at least 2 different colours (not blank)
 #   [-DMAX_SECONDS=n]         the run must take at most n seconds of real time
+#   [-DTONE=f;hz;pct;peak -DPYTHON=py -DTONE_PY=wav_tone.py]
+#                             WAV f has a dominant tone of hz +- pct % with
+#                             peak >= peak (tests/wav_tone.py)
 if(NOT DEFINED EXE OR NOT DEFINED EXPECT OR NOT DEFINED WORK_DIR)
     message(FATAL_ERROR "usage: cmake -DEXE=... -DEXPECT=... -DWORK_DIR=... [...] -P headless_test.cmake")
 endif()
@@ -151,6 +154,22 @@ if(COLORS)
             string(APPEND _fail "${COLORS} is a single-colour image
 ")
         endif()
+    endif()
+endif()
+
+if(TONE)
+    list(GET TONE 0 _tf)
+    list(GET TONE 1 _thz)
+    list(GET TONE 2 _tpct)
+    list(GET TONE 3 _tpeak)
+    execute_process(COMMAND ${PYTHON} -I ${TONE_PY} "${WORK_DIR}/${_tf}"
+                            --freq ${_thz} --tol ${_tpct} --peak ${_tpeak}
+                    RESULT_VARIABLE _trc OUTPUT_VARIABLE _tout ERROR_VARIABLE _terr)
+    string(STRIP "${_tout}" _tout)
+    message(STATUS "${_tf}: ${_tout}")
+    if(NOT _trc EQUAL 0)
+        string(APPEND _fail "wav_tone.py ${_tf}: ${_tout} ${_terr}
+")
     endif()
 endif()
 

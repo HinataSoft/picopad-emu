@@ -49,8 +49,10 @@
 // Pump lock (InPump, CAS): PUMP_FREE / PUMP_GAME / PUMP_WATCHDOG. The game
 // thread waits for a watchdog step to finish (it is short and never waits for
 // the game), so no game pump is ever skipped (determinism); a nested
-// game-thread pump (InPump == PUMP_GAME) returns at once. The watchdog only
-// tries. Only the game thread sets PUMP_GAME and only the watchdog sets
+// game-thread pump (InPump == PUMP_GAME) returns at once. host_pump_lock/
+// unlock take it the same way on the game thread for a short update outside
+// a pump (a GPIO sound level change, audio.c), also inside IRQ_LOCK (the
+// watchdog never waits for the pump lock). The watchdog only tries. Only the game thread sets PUMP_GAME and only the watchdog sets
 // PUMP_WATCHDOG; each owner releases its own value.
 //
 // Thread ownership of the shared state:
@@ -325,6 +327,25 @@ void host_pump(void)
 			SpinCalls = 0;
 		}
 	}
+}
+
+int host_pump_lock(void)
+{
+	// nested: this (game) thread already holds it (only it sets PUMP_GAME)
+	if (__atomic_load_n(&InPump, __ATOMIC_RELAXED) == PUMP_GAME) return 0;
+	int expect = PUMP_FREE;
+	while (!__atomic_compare_exchange_n(&InPump, &expect, PUMP_GAME, 0,
+			__ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+	{
+		expect = PUMP_FREE;
+		__builtin_ia32_pause();
+	}
+	return 1;
+}
+
+void host_pump_unlock(void)
+{
+	__atomic_store_n(&InPump, PUMP_FREE, __ATOMIC_RELEASE);
 }
 
 // host_fatal off the game thread: inside a watchdog step, leave the step

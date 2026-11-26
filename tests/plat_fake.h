@@ -15,6 +15,9 @@ extern volatile unsigned long long fake_now;   /* plat_now_us(); plat_sleep_us a
 extern unsigned long long fake_sleep_min_us;   /* models OS sleep granularity: a sleep
                                                   advances at least this much (0 = exact) */
 extern int fake_sleep_count;                   /* number of plat_sleep_us() calls */
+extern int fake_real_time;                     /* 1 = plat_now_us is the real (QPC) clock and
+                                                  plat_sleep_us really sleeps, as the window
+                                                  platform (platform/main.cpp); fake_now unused */
 extern unsigned short fake_fb[PLAT_H][PLAT_W]; /* copy of every presented rectangle */
 extern int fake_present_count;                 /* number of plat_present() calls */
 extern int fake_present_x, fake_present_y, fake_present_w, fake_present_h; /* last call */

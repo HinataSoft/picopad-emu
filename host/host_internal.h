@@ -61,6 +61,12 @@ void host_pump_idle_reset(void);
 // running watchdog step; before host_pump_reset at the end)
 void host_pump_activate(int on);
 
+// game thread: take the pump lock (waits for a running watchdog step) for a
+// short update outside host_pump; 1 = taken (release with host_pump_unlock),
+// 0 = already held by this thread (called from inside a pump), do not release
+int host_pump_lock(void);
+void host_pump_unlock(void);
+
 // host_fatal off the game thread: inside a host_watchdog step, unwind the
 // step (it then requests exit code 1); otherwise return
 void host_watchdog_unwind(void);
@@ -73,6 +79,14 @@ void host_watchdog_unwind(void);
 void host_audio_pump(void);
 unsigned int host_audio_ring_level(void);	// samples in the ring (head - tail), for tests
 void host_audio_reset(void);		// restart the produced-sample counter (host_run_game)
+
+// GPIO (bit-bang) sound on PWMSND_GPIO, used until PWM_Enable on the sound
+// slice (then the PWM path above applies): records a change of the pin level
+// (0/1) at host_now_us(); the mixer first catches up to that time with the
+// old level. Game thread only (other threads are ignored). Also declared in
+// hw/host_gpio.h, called by its GPIO_Out* functions.
+void host_gpio_snd_level(int level);
+int host_gpio_snd_get(void);		// current level of the pin (0/1)
 
 // --- runtime.c
 

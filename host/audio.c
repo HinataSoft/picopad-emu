@@ -33,6 +33,21 @@
 // 1/AUDIO_ADJ_SAMPLES (~3 %). PLAT_AUDIO_CAPTURE (headless/WAV) is unaffected:
 // exactly floor(t * rate / 1e6) samples, deterministic.
 // The mixer rate is audio_rate, 0 meaning 44100.
+// GPIO sound (bit-bang, e.g. the TINYGAME games with USE_PWMSND 0 toggle
+// PWMSND_GPIO with gpio_put and time it with WaitUs): until PWM_Enable was
+// called on the sound slice in this run (sticky, pwm_snd_used), a sample is
+// the fraction of its interval the pin spent at 1, times GPIO_SND_ONE (idle 0
+// = silence 0, no DC offset). Time is scaled by the rate (t_us * rate), so
+// sample g covers [g, g+1) * 1e6 exactly as the floor(t * rate / 1e6) count.
+// host_gpio_snd_level (game thread) takes the pump lock, lets the mixer catch
+// up to host_now_us() with the old level, then records the change: the cursor
+// (gpio_idx: sample being accumulated, gpio_seg: start of the current level
+// inside it, gpio_hi: time at 1 before gpio_seg) only moves forward. With
+// PLAT_AUDIO_RING production runs 'lead' samples ahead of emulated time, so
+// produced sample p takes GPIO sample p - lead (the lead is latency, as for
+// the PWM mixer; when it changes by a step, a GPIO sample repeats or drops).
+// The GPIO state is touched only under the pump lock (watchdog steps run the
+// mixer too), except gpio_level after pwm_snd_used (then unused by the mixer).
 
 #include "host_internal.h"
 
@@ -48,6 +63,8 @@
 #define AUDIO_HIGH	3072	// ring level above which the lead shrinks [frames]
 #define AUDIO_ADJ_SAMPLES 32	// emulated samples per lead step of 1 sample (max drift ~3 %)
 #define AUDIO_ADJ_MAX_STEP 8	// max lead change per pump [frames]
+#define GPIO_SND_ONE	16384	// GPIO sound: sample value of a whole interval at level 1
+#define GPIO_SND_UNIT	1000000ULL // GPIO sound: one sample in scaled time (t_us * rate)
 
 // sound output slice/channel chosen by PWMSndInit (lib_pwmsnd.c, compiled
 // into the game only with USE_PWMSND; without it there is no PWM sound)
@@ -71,6 +88,13 @@ static unsigned long long produced;	// samples produced since host_run_game star
 static long long lead = AUDIO_TARGET;	// ring mode: production ahead of emulated time [frames] (pump lock)
 static unsigned long long adj_base;	// ring mode: emulated sample time of the last lead step (pump lock)
 
+static volatile int pwm_snd_used;	// 1 = PWM_Enable on the sound slice in this run: no GPIO sound
+static int gpio_level;			// level of PWMSND_GPIO (game thread writes, pump lock)
+static unsigned long long gpio_idx;	// GPIO sample being accumulated (pump lock)
+static unsigned long long gpio_seg;	// scaled time since which gpio_level holds, within gpio_idx (pump lock)
+static unsigned long long gpio_hi;	// scaled time at 1 inside gpio_idx before gpio_seg (pump lock)
+static short gpio_last;			// last GPIO sample, repeated when the index steps back (pump lock)
+
 void host_set_handler(int irq, void (*fn)(void))
 {
 	if (irq < 0 || irq >= HOST_IRQ_MAX) return;
@@ -87,22 +111,101 @@ void host_pwm_enable(int slice, int on)
 {
 	if (slice < 0 || slice >= HOST_PWM_SLICES) return;
 	pwm_enabled[slice] = on ? 1 : 0;
+	if (on && slice == PWMSndSlice) pwm_snd_used = 1;	// the SDK PWM sound runs
+}
+
+static void audio_pump_at(unsigned long long now);
+
+// GPIO sound sample g (pump lock): level history from the cursor to the end
+// of sample g (in the past or at the current level, see host_audio_pump)
+static short gpio_sample(unsigned long long g)
+{
+	unsigned long long end, hi;
+	if (g < gpio_idx) return gpio_last;	// ring lead grew: repeat
+	if (g > gpio_idx)
+	{
+		// ring lead shrank: drop the samples in between; no change was
+		// recorded after gpio_seg, so the level holds over all of sample g
+		gpio_idx = g;
+		gpio_hi = 0;
+		gpio_seg = g * GPIO_SND_UNIT;
+	}
+	end = (g + 1) * GPIO_SND_UNIT;
+	hi = gpio_hi + (gpio_level ? end - gpio_seg : 0);
+	gpio_last = (short)(hi * GPIO_SND_ONE / GPIO_SND_UNIT);
+	gpio_idx = g + 1;
+	gpio_hi = 0;
+	gpio_seg = end;
+	return gpio_last;
+}
+
+void host_gpio_snd_level(int level)
+{
+	unsigned long long now, t, cur;
+	int rate, took;
+
+	level = level ? 1 : 0;
+	if (!host_is_game_thread() || level == gpio_level) return;
+	if (pwm_snd_used)
+	{
+		gpio_level = level;	// PWM path: the mixer does not read it
+		return;
+	}
+
+	took = host_pump_lock();
+	now = host_now_us();
+	audio_pump_at(now);	// samples up to now with the old level
+
+	rate = host_cfg()->audio_rate > 0 ? host_cfg()->audio_rate : AUDIO_RATE_DEF;
+	t = now * (unsigned long long)rate;
+	cur = t / GPIO_SND_UNIT;
+	if (cur > gpio_idx)
+	{
+		// the mixer has not taken the samples before 'cur' (the ring lead
+		// shrank or is below zero): they are dropped, sample 'cur' starts at
+		// the old level
+		gpio_idx = cur;
+		gpio_hi = 0;
+		gpio_seg = cur * GPIO_SND_UNIT;
+	}
+	if (t > gpio_seg)
+	{
+		if (gpio_level) gpio_hi += t - gpio_seg;
+		gpio_seg = t;
+	}
+	// else: the cursor is ahead of 't' (after a lead step), the change
+	// takes effect at gpio_seg
+	gpio_level = level;
+
+	if (took) host_pump_unlock();
+}
+
+int host_gpio_snd_get(void)
+{
+	return gpio_level;
 }
 
 // under the pump lock (game thread or watchdog): produce the samples that are
 // due by emulated time; 'produced' and the ring head are only touched here
 void host_audio_pump(void)
 {
+	audio_pump_at(host_now_us());
+}
+
+// host_audio_pump for emulated time 'now' [us]
+static void audio_pump_at(unsigned long long now)
+{
 	const host_config* cfg = host_cfg();
 	void (*fn)(void);
 	short cap[AUDIO_CAPTURE_CHUNK];
 	unsigned long long due;
 	unsigned int head, tail;
-	int rate, out, ncap = 0, mix, slice;
+	int rate, out, ncap = 0, mix, slice, gpio;
+	long long glag = 0;	// GPIO sample = produced - glag (ring lead)
 
 	rate = cfg->audio_rate > 0 ? cfg->audio_rate : AUDIO_RATE_DEF;
 	out = cfg->audio_out;
-	due = host_now_us() * (unsigned long long)rate / 1000000ULL;
+	due = now * (unsigned long long)rate / 1000000ULL;
 	if (out & PLAT_AUDIO_RING)
 	{
 		// drift correction: steer the lead by the ring level
@@ -117,12 +220,14 @@ void host_audio_pump(void)
 		}
 		if (lead >= 0) due += (unsigned long long)lead;
 		else due = (due > (unsigned long long)-lead) ? due - (unsigned long long)-lead : 0;
+		glag = lead;
 	}
 
 	// without PWM_Enable or without a handler the samples are 0, time still flows
 	slice = PWMSndSlice;
 	fn = irq_handlers[HOST_IRQ_PWM_WRAP];
 	mix = (fn != 0) && slice >= 0 && slice < HOST_PWM_SLICES && pwm_enabled[slice];
+	gpio = !mix && !pwm_snd_used;
 
 	head = ring_head;
 	tail = __atomic_load_n(&ring_tail, __ATOMIC_ACQUIRE);
@@ -135,6 +240,11 @@ void host_audio_pump(void)
 			s = ((int)snd_comp - 1024) * 32;
 			if (s > 32767) s = 32767;
 			if (s < -32768) s = -32768;
+		}
+		else if (gpio)
+		{
+			long long g = (long long)produced - glag;
+			if (g >= 0) s = gpio_sample((unsigned long long)g);
 		}
 		if (out & PLAT_AUDIO_CAPTURE)
 		{
@@ -163,6 +273,14 @@ void host_audio_reset(void)
 	produced = 0;
 	lead = AUDIO_TARGET;
 	adj_base = 0;
+	// after DeviceInit (PWMSndInit leaves the slice disabled): GPIO sound
+	// until the game enables it
+	pwm_snd_used = PWMSndSlice >= 0 && PWMSndSlice < HOST_PWM_SLICES && pwm_enabled[PWMSndSlice];
+	gpio_level = 0;
+	gpio_idx = 0;
+	gpio_seg = 0;
+	gpio_hi = 0;
+	gpio_last = 0;
 }
 
 unsigned int host_audio_ring_level(void)

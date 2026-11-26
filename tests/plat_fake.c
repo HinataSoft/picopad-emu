@@ -1,12 +1,21 @@
 /* Fake platform for unit tests: implementation of include/plat_api.h. */
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#include <windows.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "plat_fake.h"
 
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+
 volatile unsigned long long fake_now = 0; /* shared with test helper threads: atomic access */
 unsigned long long fake_sleep_min_us = 0;
 int fake_sleep_count = 0;
+int fake_real_time = 0;
 unsigned short fake_fb[PLAT_H][PLAT_W];
 int fake_present_count = 0;
 int fake_present_x = 0, fake_present_y = 0, fake_present_w = 0, fake_present_h = 0;
@@ -19,11 +28,47 @@ unsigned long long fake_tick_times[64];
 int fake_tick_count = 0;
 int (*fake_tick_fn)(unsigned long long t_us) = NULL;
 
-unsigned long long plat_now_us(void) { return __atomic_load_n(&fake_now, __ATOMIC_SEQ_CST); }
+/* real clock and sleep of the window platform (copy of platform/main.cpp:
+   QPC microseconds, high resolution waitable timer, else Sleep) */
+static unsigned long long real_now_us(void)
+{
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (unsigned long long)(c.QuadPart / f.QuadPart) * 1000000ull +
+           (unsigned long long)(c.QuadPart % f.QuadPart) * 1000000ull / (unsigned long long)f.QuadPart;
+}
+
+static void real_sleep_us(unsigned long long us)
+{
+    static HANDLE timer = NULL;
+    static int timer_tried = 0;
+    if (us == 0) { Sleep(0); return; }
+    if (!timer_tried) {
+        timer_tried = 1;
+        timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    }
+    if (timer != NULL) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)(us * 10);
+        if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) {
+            WaitForSingleObject(timer, INFINITE);
+            return;
+        }
+    }
+    Sleep((DWORD)((us + 999) / 1000));
+}
+
+unsigned long long plat_now_us(void)
+{
+    if (fake_real_time) return real_now_us();
+    return __atomic_load_n(&fake_now, __ATOMIC_SEQ_CST);
+}
 
 void plat_sleep_us(unsigned long long us)
 {
     fake_sleep_count++;
+    if (fake_real_time) { real_sleep_us(us); return; }
     __atomic_add_fetch(&fake_now, (us < fake_sleep_min_us) ? fake_sleep_min_us : us, __ATOMIC_SEQ_CST);
 }
 

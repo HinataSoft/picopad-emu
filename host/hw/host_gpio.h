@@ -35,6 +35,17 @@ extern "C" {
 // get input level (0 or 1) of GPIO pin (buttons are active low)
 u8 host_gpio_in(int pin);
 
+// sound output pin PWMSND_GPIO driven as a GPIO (bit-bang sound, host/audio.c):
+// set / get its level 0 or 1; the other output pins are not modelled
+void host_gpio_snd_level(int level);
+int host_gpio_snd_get(void);
+#ifdef PWMSND_GPIO
+#define HOST_GPIO_SND_PIN	PWMSND_GPIO
+#else
+#define HOST_GPIO_SND_PIN	(-1)
+#endif
+#define HOST_GPIO_SND_BIT	((HOST_GPIO_SND_PIN >= 0) ? (1u << HOST_GPIO_SND_PIN) : 0u)
+
 
 // number of pins
 
@@ -512,13 +523,13 @@ static inline u8 GPIO_In(int pin) { return host_gpio_in(pin); } // HOST
 static inline gpio_mask_t GPIO_InAll() { gpio_mask_t m = 0; int i; for (i = 0; i < GPIO_PIN_NUM; i++) if (host_gpio_in(i)) m |= BIT(i); return m; } // HOST
 
 // output 0 to pin (pin = 0..29 or 0..47,56..63)
-static inline void GPIO_Out0(int pin) { } // HOST: no hardware
+static inline void GPIO_Out0(int pin) { if (pin == HOST_GPIO_SND_PIN) host_gpio_snd_level(0); } // HOST
 
 // output 1 to pin (pin = 0..29 or 0..47,56..63)
-static inline void GPIO_Out1(int pin) { } // HOST: no hardware
+static inline void GPIO_Out1(int pin) { if (pin == HOST_GPIO_SND_PIN) host_gpio_snd_level(1); } // HOST
 
 // flip output to pin (pin = 0..29 or 0..47,56..63)
-static inline void GPIO_Flip(int pin) { } // HOST: no hardware
+static inline void GPIO_Flip(int pin) { if (pin == HOST_GPIO_SND_PIN) host_gpio_snd_level(!host_gpio_snd_get()); } // HOST
 
 // output value to pin (val = 0 or val != 0; pin = 0..29 or 0..47,56..63)
 static inline void GPIO_Out(int pin, int val)
@@ -531,29 +542,29 @@ static inline void GPIO_Out(int pin, int val)
 
 // output all pins
 // To use pin mask in range (first..last), use function PinRangeMask.
-static inline void GPIO_OutAll(gpio_mask_t value) { } // HOST: no hardware
+static inline void GPIO_OutAll(gpio_mask_t value) { if (HOST_GPIO_SND_BIT) host_gpio_snd_level((value & HOST_GPIO_SND_BIT) != 0); } // HOST
 
 // output masked values to pins
 // To use pin mask in range (first..last), use function PinRangeMask.
-static inline void GPIO_OutMask(gpio_mask_t mask, gpio_mask_t value) { } // HOST: no hardware
+static inline void GPIO_OutMask(gpio_mask_t mask, gpio_mask_t value) { if (mask & HOST_GPIO_SND_BIT) host_gpio_snd_level((value & HOST_GPIO_SND_BIT) != 0); } // HOST
 
 // clear output pins masked
 // To use pin mask in range (first..last), use function PinRangeMask.
-static inline void GPIO_ClrMask(gpio_mask_t mask) { } // HOST: no hardware
+static inline void GPIO_ClrMask(gpio_mask_t mask) { if (mask & HOST_GPIO_SND_BIT) host_gpio_snd_level(0); } // HOST
 
 // set output pins masked
 // To use pin mask in range (first..last), use function PinRangeMask.
-static inline void GPIO_SetMask(gpio_mask_t mask) { } // HOST: no hardware
+static inline void GPIO_SetMask(gpio_mask_t mask) { if (mask & HOST_GPIO_SND_BIT) host_gpio_snd_level(1); } // HOST
 
 // flip output pins masked
 // To use pin mask in range (first..last), use function PinRangeMask.
-static inline void GPIO_FlipMask(gpio_mask_t mask) { } // HOST: no hardware
+static inline void GPIO_FlipMask(gpio_mask_t mask) { if (mask & HOST_GPIO_SND_BIT) host_gpio_snd_level(!host_gpio_snd_get()); } // HOST
 
 // get last output value to pin (returns 0 or 1; pin = 0..29 or 0..47,56..63)
-static inline u8 GPIO_GetOut(int pin) { return (u8)0; } // HOST: no hardware
+static inline u8 GPIO_GetOut(int pin) { return (u8)((pin == HOST_GPIO_SND_PIN) ? host_gpio_snd_get() : 0); } // HOST
 
 // get all last output values to pins
-static inline gpio_mask_t GPIO_GetOutAll() { return (gpio_mask_t)0; } // HOST: no hardware
+static inline gpio_mask_t GPIO_GetOutAll() { return host_gpio_snd_get() ? (gpio_mask_t)HOST_GPIO_SND_BIT : (gpio_mask_t)0; } // HOST
 
 // set output direction of pin (enable output mode; pin = 0..29 or 0..47,56..63)
 static inline void GPIO_DirOut(int pin) { } // HOST: no hardware
