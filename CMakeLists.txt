@@ -138,6 +138,13 @@ target_link_libraries(test_sparsedisk PRIVATE platform_sparsedisk)
 picopad_exe_runtime(test_sparsedisk)
 add_test(NAME sparsedisk COMMAND test_sparsedisk)
 
+# FAT32 formatovac/zapisovac/ctecka pro --sddir: cisty C bez SDL a SDK
+add_executable(test_fatvol tests/test_fatvol.c)
+target_include_directories(test_fatvol PRIVATE tests)
+target_link_libraries(test_fatvol PRIVATE platform_fatvol platform_sparsedisk)
+picopad_exe_runtime(test_fatvol)
+add_test(NAME fatvol COMMAND test_fatvol)
+
 # Dekodovani PNG pres zlib (test png zapise soubory do build adresare)
 if(PICOPAD_PYTHON)
     add_test(NAME png_decode
