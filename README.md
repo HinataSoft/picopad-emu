@@ -245,3 +245,5 @@ Výstup: `<OUT>/summary.md` (tabulka `hra | build | kód | end řádek | barev n
 2026-11-24 ručně: `TETRIS.exe` na PC hraje s obrazem, zvukem a klávesami; `HELLO.uf2` nahraný přes BOOTSEL na Picopad 1.0 vykreslí RGB čtverečky, text „HELLO PICOPAD“ a zelený obdélník.
 
 2026-11-26 ručně (milník 3): v okně ověřeny hry z TINYGAME se zvukem (bit-bang na GPIO15), ANTS, MULTISET (stránka se systémovými informacemi) a PICTOR s `--sd` nad obrazem vytvořeným přes `picopad-sdimg create --from` se složkou `GAME`.
+
+2026-11-26 ručně (`--sddir`): v okně hra nad SD kartou ze složky přes `--sddir`; po ukončení jsou změny, které hra na kartě udělala, ve složce.
